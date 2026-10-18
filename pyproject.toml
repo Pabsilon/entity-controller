@@ -1,0 +1,31 @@
+[project]
+name = "entity-controller"
+version = "9.7.6"
+description = "Home Assistant custom integration implementing 'When This, Then That' automations with a finite state machine."
+readme = "README.md"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.14.2"
+dependencies = [
+    "transitions==0.8.8",
+]
+
+[dependency-groups]
+dev = [
+    "homeassistant==2026.10.2",
+    "pytest-homeassistant-custom-component==0.13.373",
+    "ruff",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+norecursedirs = ["tests/legacy"]
+
+[tool.ruff]
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
