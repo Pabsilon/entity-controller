@@ -20,15 +20,15 @@ enable_block:
       description: Name(s) of entities to change.
       example: 'entity_controller.motion_light'
 
-set_stay_on:
-  description: Change the stay to on
+enable_stay_mode:
+  description: Enable stay mode. Control entities will remain on until manually turned off
   fields:
     entity_id:
       description: Name(s) of entities to change.
       example: 'entity_controller.motion_light'
 
-set_stay_off:
-  description: Change the stay to off
+disable_stay_mode:
+  description: Disable stay mode. Control entities will be managed by Entity Controller again
   fields:
     entity_id:
       description: Name(s) of entities to change.

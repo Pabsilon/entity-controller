@@ -110,7 +110,6 @@ _LOGGER = logging.getLogger(__name__)
 # Configure delay before starting to monitor state change events
 STARTUP_DELAY = 70
 
-devices = []
 MODE_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_SERVICE_DATA, default=None): vol.Coerce(
@@ -365,6 +364,7 @@ async def async_setup(hass, config):
     # Enter blocked state when component is enabled and entity is on
     machine.add_transition(trigger="blocked", source="constrained", dest="blocked", conditions=["is_block_enabled"])
 
+    devices = []
     for myconfig in config[DOMAIN]:
         _LOGGER.info("Domain Configuration: " + str(myconfig))
         for key, config in myconfig.items():

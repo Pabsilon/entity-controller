@@ -24,6 +24,7 @@ from homeassistant.helpers.config_validation import (  # noqa: F401
     make_entity_service_schema,
 )
 
+from homeassistant.core import callback
 from homeassistant.helpers.entity_component import EntityComponent
 
 from homeassistant.const import (
@@ -62,6 +63,7 @@ def async_setup_entity_services(component: EntityComponent):
 
     return True
 
+@callback
 def async_entity_service_activate(self):
     """ Activates the entity controller"""
 
@@ -71,6 +73,7 @@ def async_entity_service_activate(self):
     self.model.log.debug("Activating the Entity Controller")
     self.model.activate()
 
+@callback
 def async_entity_service_clear_block(self):
     """ Clear the block property, if set"""
 
@@ -80,6 +83,7 @@ def async_entity_service_clear_block(self):
     self.model.log.debug("Clearing Blocked state")
     self.model.block_timer_expires()
 
+@callback
 def async_entity_service_enable_block(self):
     """ Enable the block property, if timer is active"""
 
@@ -89,14 +93,17 @@ def async_entity_service_enable_block(self):
     self.model.log.debug("Enabling Blocked state")
     self.model.block_enable()
 
+@callback
 def async_entity_service_enable_stay_mode(self):
     self.model.log.debug("Enable stay mode - Control entities will remain on until manually turned off")
     self.model.stay = True
 
+@callback
 def async_entity_service_disable_stay_mode(self):
     self.model.log.debug("Disable stay mode - Control entities will be managed by EC")
     self.model.stay = False
 
+@callback
 def async_entity_service_set_night_mode(self, start_time=None, end_time=None):
     """ Changes the night mode start and/or end times """
 
