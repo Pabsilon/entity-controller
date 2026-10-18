@@ -2,7 +2,8 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+<a name="10.0.0"></a>
+## [10.0.0](https://github.com/Pabsilon/entity-controller/compare/235b4ab...v10.0.0) (2026-10-18)
 
 ### Breaking Changes
 
