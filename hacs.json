@@ -1,4 +1,6 @@
 {
   "name": "Entity Controller",
-  "homeassistant": "2022.7.4"
+  "homeassistant": "2026.10.0",
+  "zip_release": true,
+  "filename": "entity_controller.zip"
 }

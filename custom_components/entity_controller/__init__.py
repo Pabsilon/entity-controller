@@ -18,16 +18,13 @@ along with Entity Controller.  If not, see <https://www.gnu.org/licenses/>.
 """
 Entity controller component for Home Assistant.
 Maintainer:       Daniel Mason
-Version:          v9.7.6
 Project Page:     https://danielbkr.net/projects/entity-controller/
-Documentation:    https://github.com/danobot/entity-controller
+Documentation:    https://github.com/Pabsilon/entity-controller
 """
-import asyncio
 import hashlib
 import logging
 import re
 from datetime import date, datetime, time, timedelta
-from threading import Timer
 import pprint
 from typing import Optional, List
 
@@ -39,6 +36,7 @@ from homeassistant.helpers import entity, event, service
 from homeassistant.helpers.template import Template
 from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.helpers.sun import get_astral_event_date
+from homeassistant.loader import async_get_integration
 from homeassistant.util import dt
 import homeassistant.util.yaml.objects as YamlObjects
 import homeassistant.util.uuid as uuid_util
@@ -105,10 +103,6 @@ from .const import (
 from .entity_services import (
     async_setup_entity_services,
 )
-
-
-
-VERSION = '9.7.6'
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -181,10 +175,10 @@ async def async_setup(hass, config):
 
     component = EntityComponent(_LOGGER, DOMAIN, hass)
 
+    integration = await async_get_integration(hass, DOMAIN)
     _LOGGER.info(
-        "If you have ANY issues with EntityController (v"
-        + VERSION
-        + "), please enable DEBUG logging under the logger component and kindly report the issue on Github. https://github.com/danobot/entity-controller/issues"
+        "If you have ANY issues with EntityController (v%s), please enable DEBUG logging under the logger component and kindly report the issue on Github. https://github.com/Pabsilon/entity-controller/issues",
+        integration.version,
     )
 
     async_setup_entity_services(component)
@@ -480,7 +474,7 @@ class EntityController(entity.Entity):
         """ Schedules an entity state update with HASS """
         # _LOGGER.debug("Scheduled update with HASS")
         if self.may_update:
-            self.schedule_update_ha_state(True)
+            self.async_schedule_update_ha_state(True)
 
     def set_attr(self, k, v):
         if k == CONF_DELAY:
@@ -552,6 +546,7 @@ class Model:
 
         event.async_call_later(self.hass, STARTUP_DELAY, self.startup_delay_callback)
 
+    @callback
     def startup_delay_callback(self, evt):
         config = self.config
         self.config_static_strings(config)
@@ -737,15 +732,14 @@ class Model:
 
         expiry_time = datetime.now() + timedelta(seconds=self.previous_delay)
 
-        # not able to use async_call_later because no known way to check whether timer is active.
-        # self.timer_handle = event.async_call_later(self.hass, self.previous_delay, self.timer_expire)
-        self.timer_handle = Timer(self.previous_delay, self.timer_expire)
-        self.timer_handle.start()
+        # timer_handle holds the cancel callback while the timer is active, None otherwise.
+        self.timer_handle = event.async_call_later(self.hass, self.previous_delay, self.timer_expire)
         self.update(expires_at=expiry_time)
 
     def _cancel_timer(self):
-        if self.timer_handle.is_alive():
-            self.timer_handle.cancel()
+        if self.timer_handle:
+            self.timer_handle()
+            self.timer_handle = None
 
     def _reset_timer(self):
         self.log.debug("_reset_timer :: Resetting timer: " + str(self.backoff))
@@ -758,16 +752,20 @@ class Model:
 
         return True
 
-    def timer_expire(self):
+    @callback
+    def timer_expire(self, _now=None):
         self.log.debug("timer_expire :: Timer expired")
+        self.timer_handle = None
         if self.is_duration_sensor() and self.is_sensor_on():  # Ignore timer expiry because duration sensor overwrites timer
             self.update(expires_at="pending sensor")
         else:
             self.log.debug("timer_expire :: Trigger timer_expires event")
             self.timer_expires()
 
-    def block_timer_expire(self):
+    @callback
+    def block_timer_expire(self, _now=None):
         self.log.debug("block_timer_expire :: Blocked Timer expired")
+        self.block_timer_handle = None
         self.block_timer_expires()
 
     # =====================================================
@@ -879,8 +877,7 @@ class Model:
         return self.sensor_type == SENSOR_TYPE_DURATION
 
     def is_timer_expired(self):
-        expired = self.timer_handle.is_alive() == False
-        return expired
+        return self.timer_handle is None
 
     def does_sensor_reset_timer(self):
         return self.config[CONF_SENSOR_RESETS_TIMER]
@@ -935,15 +932,15 @@ class Model:
 
         self.do_transition_behaviour(CONF_ON_ENTER_BLOCKED)
         if self.block_timeout:
-            self.block_timer_handle = Timer(self.block_timeout, self.block_timer_expire)
-            self.block_timer_handle.start()
+            self.block_timer_handle = event.async_call_later(self.hass, self.block_timeout, self.block_timer_expire)
             self.update(block_timeout=self.block_timeout)
 
     def on_exit_blocked(self):
         self.log.debug("Exiting blocked")
         self.do_transition_behaviour(CONF_ON_EXIT_BLOCKED)
-        if self.block_timer_handle and self.block_timer_handle.is_alive():
-            self.block_timer_handle.cancel()
+        if self.block_timer_handle:
+            self.block_timer_handle()
+            self.block_timer_handle = None
 
     def on_enter_constrained(self):
         self.log.debug("Entering constrained")
@@ -1583,9 +1580,8 @@ class Model:
             params = service_data
 
         params["entity_id"] = entity
-        asyncio.run_coroutine_threadsafe(
-            self.hass.services.async_call(domain, service, service_data, context=self.context),
-            self.hass.loop
+        self.hass.async_create_task(
+            self.hass.services.async_call(domain, service, service_data, context=self.context)
         )
         self.update(service_data=service_data)
 
