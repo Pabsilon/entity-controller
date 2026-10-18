@@ -1,0 +1,24 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - name: Check versions match the tag
+        run: uv run --no-project python scripts/check_version.py "${GITHUB_REF_NAME}"
+      - name: Build HACS zip
+        working-directory: custom_components/entity_controller
+        run: zip -r "${GITHUB_WORKSPACE}/entity_controller.zip" . -x "__pycache__/*"
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: entity_controller.zip
+          generate_release_notes: true
