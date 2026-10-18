@@ -1,9 +1,63 @@
-# test.sh
+# Development
 
-sudo rm -rf **/__pycache__ && docker build -t test_ml . && docker run --rm -v ${PWD}:/app test_ml
-sudo docker build -t test_ml .
+The project is managed with [uv](https://docs.astral.sh/uv/). It needs Python 3.14.2 or newer,
+the same as Home Assistant 2026.10.
 
-# ci.sh
-ls -la
-ls tests -la
-pytest ./tests/test_lighting_sm.py
+## Setup
+
+```bash
+uv sync
+```
+
+This creates `.venv/` with Home Assistant, `pytest-homeassistant-custom-component` and `ruff`.
+
+## Tests
+
+```bash
+uv run pytest
+```
+
+The tests in `tests/` use `pytest-homeassistant-custom-component`, which runs a real Home Assistant
+instance in the test process. The fixture in `tests/test_init.py` sets up an Entity Controller and
+moves HA's clock forward with `freezer` and `async_fire_time_changed`, so the tests don't actually
+wait for the startup delay or timers.
+
+Each test module must import from `custom_components.entity_controller` at the top. Otherwise the
+plugin's own `testing_config/custom_components` package hides ours and HA reports
+"Integration not found".
+
+`tests/legacy/` has the original test suite. It targets a 2018 Home Assistant and is not run. It
+stays as a reference for porting the tests.
+
+## Lint
+
+```bash
+uv run ruff check tests scripts
+uv run ruff format tests scripts
+```
+
+The integration code isn't linted yet. It will be once it has been refactored.
+
+## Validation
+
+CI also runs hassfest and the HACS validation. To run hassfest locally:
+
+```bash
+docker run --rm -v "$PWD":/github/workspace ghcr.io/home-assistant/hassfest
+```
+
+## Releasing
+
+The version lives in two places, which must match: `pyproject.toml` and
+`custom_components/entity_controller/manifest.json`.
+
+1. Bump the version in both files.
+2. Add an entry to `CHANGELOG.md`.
+3. Commit, then tag and push:
+   ```bash
+   git tag vX.Y.Z
+   git push origin master --tags
+   ```
+
+The `Release` workflow checks the tag against both files, builds `entity_controller.zip` and
+publishes a GitHub Release with it. HACS installs from that zip.

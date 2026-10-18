@@ -1,18 +1,13 @@
 {
-	"domain": "entity_controller",
-	"name": "Entity Controller",
-	"documentation": "https://github.com/danobot/entity-controller/blob/master/README.md",
-	"requirements": [
-		"transitions==0.8.8"
-	],
-	"dependencies": [],
-	"after_dependencies": [
-		"light",
-		"script"
-	],
-	"codeowners": [
-		"@danobot"
-	],
-	"homeassistant": "2022.7.4",
-	"version": "9.7.6"
+  "domain": "entity_controller",
+  "name": "Entity Controller",
+  "after_dependencies": ["light", "script"],
+  "codeowners": ["@Pabsilon"],
+  "dependencies": [],
+  "documentation": "https://github.com/Pabsilon/entity-controller/blob/master/README.md",
+  "integration_type": "helper",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/Pabsilon/entity-controller/issues",
+  "requirements": ["transitions==0.8.8"],
+  "version": "9.7.6"
 }

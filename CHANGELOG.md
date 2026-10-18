@@ -1,6 +1,23 @@
 # Change Log
 
-All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
+All notable changes to this project will be documented in this file.
+
+## Unreleased
+
+### Breaking Changes
+
+* Requires Home Assistant 2026.10 or newer (Python 3.14).
+
+### Bug Fixes
+
+* Timers now run on Home Assistant's event loop (`async_call_later`) instead of separate threads.
+* Service calls and the `activate`, `clear_block`, `enable_block`, `enable_stay_mode`, `disable_stay_mode` and `set_night_mode` services run on the event loop, fixing thread-safety errors on current Home Assistant.
+* `services.yaml` now documents `enable_stay_mode` and `disable_stay_mode`, the names the services are actually registered under (previously `set_stay_on` and `set_stay_off`).
+
+### Chores
+
+* Fork maintained at [Pabsilon/entity-controller](https://github.com/Pabsilon/entity-controller).
+* Tooling moved to uv, with pytest-homeassistant-custom-component tests and GitHub Actions for CI and tag-based releases.
 
 <a name="9.7.6"></a>
 ## [9.7.6](https://github.com/danobot/entity-controller/compare/v9.7.5...v9.7.6) (2024-05-04)
