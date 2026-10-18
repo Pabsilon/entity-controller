@@ -1,59 +1,52 @@
 """Smoke tests for the Entity Controller integration."""
 
-from datetime import timedelta
-
-import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
-from pytest_homeassistant_custom_component.common import (
-    async_fire_time_changed,
-    async_mock_service,
-)
 
 # Importing the integration here makes sure our `custom_components` package is the
 # one Python caches, instead of the plugin's testing_config package.
 from custom_components.entity_controller.const import DOMAIN
 
+from .conftest import STARTUP_DELAY, ServiceCalls, SetupEC, advance, ec_state
+
 ENTITY_ID = f"{DOMAIN}.room"
 SENSOR = "binary_sensor.motion"
 LIGHT = "light.room"
 DELAY = 5
-# Matches STARTUP_DELAY in the integration; EC stays `pending` until it elapses.
-STARTUP_DELAY = 70
+CONFIG = {"sensor": SENSOR, "entity": LIGHT, "delay": DELAY}
 
 
-async def _advance(hass: HomeAssistant, freezer, seconds: int) -> None:
-    freezer.tick(timedelta(seconds=seconds))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
-
-
-@pytest.fixture
-async def calls(hass: HomeAssistant, freezer):
-    """Set up an EC controlling a light from a motion sensor, past its startup delay."""
+async def _setup(hass: HomeAssistant, setup_ec: SetupEC) -> None:
     hass.states.async_set(SENSOR, "off")
     hass.states.async_set(LIGHT, "off")
-    turn_on = async_mock_service(hass, "light", "turn_on")
-    turn_off = async_mock_service(hass, "light", "turn_off")
+    await setup_ec(CONFIG)
+    assert ec_state(hass) == "idle"
 
-    assert await async_setup_component(
-        hass,
-        DOMAIN,
-        {DOMAIN: {"room": {"sensor": SENSOR, "entity": LIGHT, "delay": DELAY}}},
-    )
+
+async def test_pending_until_startup_delay(
+    hass: HomeAssistant, freezer, calls: ServiceCalls
+) -> None:
+    hass.states.async_set(SENSOR, "off")
+    hass.states.async_set(LIGHT, "off")
+    assert await async_setup_component(hass, DOMAIN, {DOMAIN: {"room": CONFIG}})
     await hass.async_block_till_done()
-    assert hass.states.get(ENTITY_ID).state == "pending"
+    calls.register()
+    assert ec_state(hass) == "pending"
 
-    await _advance(hass, freezer, STARTUP_DELAY + 1)
-    assert hass.states.get(ENTITY_ID).state == "idle"
+    # Motion during the startup delay is ignored.
+    hass.states.async_set(SENSOR, "on")
+    await advance(hass, freezer, STARTUP_DELAY - 1)
+    assert ec_state(hass) == "pending"
+    assert calls.turned_on() == []
+
+    await advance(hass, freezer, 2)
+    assert ec_state(hass) == "idle"
     # Entering idle turns the controlled entities off.
-    assert len(turn_off) == 1
-    turn_off.clear()
-
-    return turn_on, turn_off
+    assert len(calls.turned_off(LIGHT)) == 1
 
 
-async def test_services_registered(hass: HomeAssistant, calls) -> None:
+async def test_services_registered(hass: HomeAssistant, setup_ec: SetupEC) -> None:
+    await _setup(hass, setup_ec)
     for service in (
         "activate",
         "clear_block",
@@ -66,81 +59,102 @@ async def test_services_registered(hass: HomeAssistant, calls) -> None:
 
 
 async def test_motion_turns_light_on_then_off(
-    hass: HomeAssistant, freezer, calls
+    hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
 ) -> None:
-    turn_on, turn_off = calls
+    await _setup(hass, setup_ec)
 
     hass.states.async_set(SENSOR, "on")
     await hass.async_block_till_done()
-    assert hass.states.get(ENTITY_ID).state == "active_timer"
-    assert len(turn_on) == 1
-    assert turn_on[0].data["entity_id"] == LIGHT
+    assert ec_state(hass) == "active_timer"
+    assert len(calls.turned_on(LIGHT)) == 1
 
     hass.states.async_set(SENSOR, "off")
-    await _advance(hass, freezer, DELAY + 1)
-    assert hass.states.get(ENTITY_ID).state == "idle"
-    assert len(turn_off) == 1
-    assert turn_off[0].data["entity_id"] == LIGHT
+    await advance(hass, freezer, DELAY + 1)
+    assert ec_state(hass) == "idle"
+    assert len(calls.turned_off(LIGHT)) == 1
 
 
-async def test_motion_resets_timer(hass: HomeAssistant, freezer, calls) -> None:
-    _, turn_off = calls
-
-    hass.states.async_set(SENSOR, "on")
-    await _advance(hass, freezer, DELAY - 2)
-    hass.states.async_set(SENSOR, "off")
-    hass.states.async_set(SENSOR, "on")
-    await _advance(hass, freezer, DELAY - 2)
-    assert hass.states.get(ENTITY_ID).state == "active_timer"
-    assert len(turn_off) == 0
-
-    await _advance(hass, freezer, 3)
-    assert hass.states.get(ENTITY_ID).state == "idle"
-    assert len(turn_off) == 1
-
-
-async def test_light_turned_on_elsewhere_blocks_motion(
-    hass: HomeAssistant, freezer, calls
+async def test_motion_resets_timer(
+    hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
 ) -> None:
-    """A light turned on by something else overrides EC until it goes off again."""
-    turn_on, _ = calls
+    await _setup(hass, setup_ec)
 
-    hass.states.async_set(LIGHT, "on")
+    hass.states.async_set(SENSOR, "on")
+    await advance(hass, freezer, DELAY - 2)
+    hass.states.async_set(SENSOR, "off")
+    hass.states.async_set(SENSOR, "on")
+    await advance(hass, freezer, DELAY - 2)
+    assert ec_state(hass) == "active_timer"
+    assert calls.turned_off() == []
+
+    await advance(hass, freezer, 3)
+    assert ec_state(hass) == "idle"
+    assert len(calls.turned_off(LIGHT)) == 1
+
+
+async def test_own_state_changes_are_ignored(
+    hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
+) -> None:
+    """The light turning on because EC asked it to must not count as a manual change."""
+    await _setup(hass, setup_ec)
+
     hass.states.async_set(SENSOR, "on")
     await hass.async_block_till_done()
-    assert hass.states.get(ENTITY_ID).state == "blocked"
-    assert len(turn_on) == 0
+    assert hass.states.get(LIGHT).state == "on"
+    assert ec_state(hass) == "active_timer"
 
+    await advance(hass, freezer, DELAY + 1)
+    assert ec_state(hass) == "idle"
+
+
+async def test_attributes(
+    hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
+) -> None:
+    await _setup(hass, setup_ec)
+    attributes = hass.states.get(ENTITY_ID).attributes
+    assert attributes["friendly_name"] == "room"
+    assert attributes["sensor_type"] == "event"
+
+    hass.states.async_set(SENSOR, "on")
+    await hass.async_block_till_done()
+    attributes = hass.states.get(ENTITY_ID).attributes
+    assert attributes["last_triggered_by"] == SENSOR
+    assert attributes["delay"] == f"{DELAY}s"
+    assert "expires_at" in attributes
+
+    # Returning to idle drops the per-activation attributes.
+    await advance(hass, freezer, DELAY + 1)
+    attributes = hass.states.get(ENTITY_ID).attributes
+    assert attributes["last_triggered_by"] == SENSOR
+    assert "expires_at" not in attributes
+
+
+async def test_friendly_name_sets_entity_id(
+    hass: HomeAssistant, setup_ec: SetupEC
+) -> None:
     hass.states.async_set(SENSOR, "off")
     hass.states.async_set(LIGHT, "off")
-    await hass.async_block_till_done()
-    assert hass.states.get(ENTITY_ID).state == "idle"
-
-    hass.states.async_set(SENSOR, "on")
-    await hass.async_block_till_done()
-    assert hass.states.get(ENTITY_ID).state == "active_timer"
-    assert len(turn_on) == 1
-
-    hass.states.async_set(SENSOR, "off")
-    await _advance(hass, freezer, DELAY + 1)
-    assert hass.states.get(ENTITY_ID).state == "idle"
+    await setup_ec(None, hall={**CONFIG, "friendly_name": "Upstairs Hall"})
+    state = hass.states.get(f"{DOMAIN}.upstairs_hall")
+    assert state.state == "idle"
+    assert state.attributes["friendly_name"] == "Upstairs Hall"
 
 
-async def test_clear_block_service(hass: HomeAssistant, freezer, calls) -> None:
-    turn_on, _ = calls
-
-    hass.states.async_set(LIGHT, "on")
-    hass.states.async_set(SENSOR, "on")
-    await hass.async_block_till_done()
-    assert hass.states.get(ENTITY_ID).state == "blocked"
-
-    await hass.services.async_call(
-        DOMAIN, "clear_block", {"entity_id": ENTITY_ID}, blocking=True
+async def test_multiple_controllers_are_independent(
+    hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
+) -> None:
+    for entity_id in (SENSOR, LIGHT, "binary_sensor.motion2", "light.room2"):
+        hass.states.async_set(entity_id, "off")
+    await setup_ec(
+        CONFIG,
+        room2={"sensor": "binary_sensor.motion2", "entity": "light.room2", "delay": 20},
     )
-    await hass.async_block_till_done()
-    assert hass.states.get(ENTITY_ID).state == "active_timer"
-    assert len(turn_on) == 1
 
-    hass.states.async_set(SENSOR, "off")
-    await _advance(hass, freezer, DELAY + 1)
-    assert hass.states.get(ENTITY_ID).state == "idle"
+    hass.states.async_set(SENSOR, "on")
+    await hass.async_block_till_done()
+    assert ec_state(hass) == "active_timer"
+    assert ec_state(hass, f"{DOMAIN}.room2") == "idle"
+    assert calls.turned_on("light.room2") == []
+
+    await advance(hass, freezer, DELAY + 1)
+    assert ec_state(hass) == "idle"

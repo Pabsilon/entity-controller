@@ -18,11 +18,15 @@ uv run pytest
 ```
 
 The tests in `tests/` use `pytest-homeassistant-custom-component`, which runs a real Home Assistant
-instance in the test process. The fixture in `tests/test_init.py` sets up an Entity Controller and
-moves HA's clock forward with `freezer` and `async_fire_time_changed`, so the tests don't actually
-wait for the startup delay or timers.
+instance in the test process. The `setup_ec` fixture in `tests/conftest.py` sets up Entity
+Controllers and moves HA's clock forward with `freezer` and `async_fire_time_changed`, so the tests
+don't actually wait for the startup delay or timers. The `calls` fixture fakes `turn_on`/`turn_off`
+and applies the new state with the caller's context, the way a real device would.
 
-Each test module must import from `custom_components.entity_controller` at the top. Otherwise the
+Known bugs are pinned with `@pytest.mark.xfail(strict=True)`, so fixing one makes its test fail
+until the marker is removed.
+
+Each test module must import from `custom_components.entity_controller` at the top. Otherwise, the
 plugin's own `testing_config/custom_components` package hides ours and HA reports
 "Integration not found".
 
