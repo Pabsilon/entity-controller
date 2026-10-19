@@ -72,3 +72,16 @@ Use a [PEP 440](https://peps.python.org/pep-0440/) pre-release version, such as 
 `v10.1.0b1`), or `a1`/`rc1`. The workflow publishes those as GitHub pre-releases. HACS only
 offers them to users who enable **Show beta versions** for the repository, so everyone else stays
 on the latest stable release.
+
+## Known issues
+
+Bugs that are known and harmless, deliberately left alone for now.
+
+- **Redundant `turn_off` when a light is switched off by hand.** Entering `idle` runs the
+  `on_enter_idle` behaviour (`off` by default) even when the controlled entities are already off.
+  With template lights or scripts in `single` mode, HA logs `<name> turn_off: Already running`.
+  Found on a real instance testing 10.1.0b1.
+- **A one-second `idle` at startup when outside the `start_time`/`end_time` window.** EC goes
+  `pending → idle → constrained`, because the constrain is scheduled one second after startup.
+  An automation triggering on `to: idle` fires once, and entering `idle` sends `turn_off` to the
+  controlled entities. Found on a real instance testing 10.1.0b1.
