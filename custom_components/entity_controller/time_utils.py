@@ -43,6 +43,16 @@ def parse_time_string(hass: HomeAssistant, time_str: str) -> datetime:
     raise ValueError(f"invalid time string: {time_str}")
 
 
+def is_time_string(time_str: str) -> bool:
+    """Whether `time_str` is accepted by `parse_time_string` or `resolve_now_offset`."""
+    if time_str in (SUN_EVENT_SUNRISE, SUN_EVENT_SUNSET):
+        return True
+    return any(
+        r.search(time_str)
+        for r in (_DATETIME_RE, _TIME_RE, _SUN_OFFSET_RE, _NOW_OFFSET_RE)
+    )
+
+
 def parse_time(hass: HomeAssistant, time_str: str) -> time:
     """Parse a time string into a naive local time of day."""
     return make_naive(parse_time_string(hass, time_str)).time()

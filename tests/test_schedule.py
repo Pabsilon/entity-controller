@@ -192,6 +192,20 @@ async def test_not_constrained_inside_window(
     assert ec_state(hass) == "constrained"
 
 
+async def test_window_attributes_survive_motion_cycle(
+    hass: HomeAssistant, freezer, setup_ec: SetupEC
+) -> None:
+    await _move_to(hass, freezer, "2026-10-19 12:00:00")
+    await _setup(hass, setup_ec, **WINDOW)
+    await _motion(hass)
+    await advance(hass, freezer, DELAY + 1)
+    assert ec_state(hass) == "idle"
+
+    attributes = hass.states.get(ENTITY_ID).attributes
+    assert attributes["start_time"] == WINDOW["start_time"]
+    assert attributes["end_time"] == WINDOW["end_time"]
+
+
 async def test_window_closing_leaves_light_on(
     hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
 ) -> None:

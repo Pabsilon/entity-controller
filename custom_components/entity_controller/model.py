@@ -753,8 +753,7 @@ class Model:
             if eparts is not None:
                 self.end_time_setting = eparts.group(1)
 
-            self.update(start=self.start_time)
-            self.update(end=self.end_time)
+            self.update(start_time=self.start_time, end_time=self.end_time)
 
             parsed_start = time_utils.futurize(parsed_start)
             parsed_end = time_utils.futurize(parsed_end)

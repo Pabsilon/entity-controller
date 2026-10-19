@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Behaviour Changes
+
+* The configuration is now validated. Invalid values (a negative `delay`, an unknown `sensor_type` or behaviour, a malformed time, an invalid entity ID, a night mode without `start_time`/`end_time`) stop EC from setting up and are reported in the log.
+* Unknown options, such as a misspelt `sensor_resets_time`, are logged as warnings naming the EC and the option. EC still sets up and ignores them.
+
+### Bug Fixes
+
+* The `start_time`/`end_time` attributes disappeared after the first return to `idle`. They were published as `start`/`end`, which are now gone.
+
 <a name="10.1.0b1"></a>
 ## [10.1.0b1](https://github.com/Pabsilon/entity-controller/compare/v10.0.0...v10.1.0b1) (2026-10-19)
 
