@@ -1,10 +1,12 @@
 """The Entity Controller entity, which exposes a model's state to Home Assistant."""
 
 import logging
+from typing import Any
 
 from homeassistant.const import CONF_NAME
-from homeassistant.core import callback
-from homeassistant.helpers import entity, event
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.entity import Entity
+from transitions.extensions import HierarchicalMachine
 
 from . import entity_services
 from .const import CONF_DELAY, PERSISTED_STATE_ATTRIBUTES
@@ -22,7 +24,11 @@ ICONS = {
 }
 
 
-class EntityController(entity.Entity):
+class EntityController(Entity):
+    """Pushes the model's state and attributes to HA whenever they change."""
+
+    _attr_should_poll = False
+
     async_activate = entity_services.async_entity_service_activate
     async_clear_block = entity_services.async_entity_service_clear_block
     async_enable_block = entity_services.async_entity_service_enable_block
@@ -30,67 +36,46 @@ class EntityController(entity.Entity):
     async_disable_stay_mode = entity_services.async_entity_service_disable_stay_mode
     async_set_night_mode = entity_services.async_entity_service_set_night_mode
 
-    def __init__(self, hass, config, machine):
-        self.attributes = {}
-        self.may_update = False
-        self.model = None
-        self.friendly_name = config.get(CONF_NAME, "Motion Light")
-        if "friendly_name" in config:
-            self.friendly_name = config.get("friendly_name")
-        try:
-            self.model = Model(hass, config, machine, self)
-        except AttributeError:
-            _LOGGER.exception(
-                "Configuration error! Please ensure you use plural keys for lists. "
-                "e.g. sensors, entities."
-            )
-        event.async_call_later(hass, 1, self.do_update)
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config: dict[str, Any],
+        machine: HierarchicalMachine,
+    ) -> None:
+        self._attr_name = config.get("friendly_name", config.get(CONF_NAME))
+        self._attributes: dict[str, Any] = {}
+        self.model = Model(hass, config, machine, self)
 
     @property
-    def state(self):
+    def state(self) -> str:
         """Return the state of the entity."""
         return self.model.state
 
     @property
-    def name(self):
-        """Return the name of the entity."""
-        return self.friendly_name
-
-    @property
-    def icon(self):
+    def icon(self) -> str:
         """Return the entity icon."""
         return ICONS.get(self.model.state, "mdi:eye")
 
     @property
-    def state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes of the entity."""
-        return self.attributes.copy()
+        return self._attributes.copy()
 
-    def reset_state(self):
+    def reset_state(self) -> None:
         """Drop state-specific attributes when returning to idle state."""
         _LOGGER.debug("Resetting state")
-        self.attributes = {
-            k: v for k, v in self.attributes.items() if k in PERSISTED_STATE_ATTRIBUTES
+        self._attributes = {
+            k: v for k, v in self._attributes.items() if k in PERSISTED_STATE_ATTRIBUTES
         }
         self.do_update()
 
     @callback
-    def do_update(self, wait=False, **kwargs):
-        """Schedules an entity state update with HASS"""
-        if self.may_update:
-            self.async_schedule_update_ha_state(True)
+    def do_update(self) -> None:
+        """Write the current state to HA, once the entity has been added."""
+        if self.hass is not None:
+            self.async_write_ha_state()
 
-    def set_attr(self, k, v):
+    def set_attr(self, k: str, v: Any) -> None:
         if k == CONF_DELAY:
             v = f"{v}s"
-        self.attributes[k] = v
-
-    # HA Callbacks
-    async def async_added_to_hass(self):
-        """Register update dispatcher."""
-        self.may_update = True
-
-    @property
-    def should_poll(self) -> bool:
-        """EntityController will push its state to HA"""
-        return False
+        self._attributes[k] = v

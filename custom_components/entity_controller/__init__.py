@@ -24,7 +24,9 @@ import logging
 from datetime import datetime
 
 import homeassistant.helpers.config_validation as cv
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_component import EntityComponent
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
 from homeassistant.util import dt
 
@@ -39,7 +41,7 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORM_SCHEMA = cv.schema_with_slug_keys(ENTITY_SCHEMA)
 
 
-async def async_setup(hass, config):
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up an Entity Controller for each configured key."""
     system_tz = str(datetime.now().astimezone().tzinfo)
     ha_tz = dt.as_local(dt.now()).tzname()
@@ -51,7 +53,7 @@ async def async_setup(hass, config):
         _LOGGER.error("System DateTime: %s", system_tz)
         _LOGGER.error("Home Assistant DateTime: %s", ha_tz)
 
-    component = EntityComponent(_LOGGER, DOMAIN, hass)
+    component = EntityComponent[EntityController](_LOGGER, DOMAIN, hass)
 
     integration = await async_get_integration(hass, DOMAIN)
     _LOGGER.info(

@@ -4,16 +4,31 @@ The transitions between states live in `machine.py`; this holds the conditions a
 callbacks they refer to by name.
 """
 
+from __future__ import annotations
+
 import hashlib
 import logging
 import re
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Any
 
 import homeassistant.util.uuid as uuid_util
 from homeassistant.const import CONF_NAME
-from homeassistant.core import Context, callback
-from homeassistant.helpers import event
+from homeassistant.core import (
+    CALLBACK_TYPE,
+    Context,
+    Event,
+    EventStateChangedData,
+    HomeAssistant,
+    callback,
+)
+from homeassistant.helpers.event import (
+    async_call_later,
+    async_track_point_in_time,
+    async_track_state_change_event,
+)
 from homeassistant.util import dt
+from transitions.extensions import HierarchicalMachine
 
 from . import time_utils
 from .const import (
@@ -63,6 +78,9 @@ from .const import (
     STARTUP_DELAY,
 )
 
+if TYPE_CHECKING:
+    from .entity import EntityController
+
 # Domains that have no turn_on/turn_off services of their own and rely on
 # homeassistant.turn_on/turn_off instead.
 HOMEASSISTANT_TURN_ON_DOMAINS = ("group",)
@@ -71,7 +89,16 @@ HOMEASSISTANT_TURN_ON_DOMAINS = ("group",)
 class Model:
     """Represents the transitions state machine model"""
 
-    def __init__(self, hass, config, machine, entity):
+    # Set by the machine, along with the trigger and is_<state> methods
+    state: str
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config: dict[str, Any],
+        machine: HierarchicalMachine,
+        entity: EntityController,
+    ) -> None:
         self.hass = hass
         self.entity = entity  # the entity containing this model
         self.config = config
@@ -80,26 +107,46 @@ class Model:
         # `custom_components.entity_controller.<name>: debug` keeps working.
         self.log = logging.getLogger(f"{__package__}.{self.name}")
 
-        self.stateEntities = []
-        self.controlEntities = []
-        self.sensorEntities = []
-        self.overrideEntities = []
-        self.triggerOnDeactivate = []
-        self.triggerOnActivate = []
-        self.timer_handle = None
-        self.block_timer_handle = None
-        self.sensor_type = None
-        self.night_mode = None
-        self.state_attributes_ignore = []
-        self.ignored_event_sources = []
+        self.state_entities: list[str] = []
+        self.control_entities: list[str] = []
+        self.sensor_entities: list[str] = []
+        self.override_entities: list[str] = []
+        self.trigger_on_deactivate: list[str] = []
+        self.trigger_on_activate: list[str] = []
+        self.control_states_on: list[str] = []
+        self.control_states_off: list[str] = []
+        self.sensor_states_on: list[str] = []
+        self.sensor_states_off: list[str] = []
+        self.override_states_on: list[str] = []
+        self.override_states_off: list[str] = []
+        self.state_states_on: list[str] = []
+        self.state_states_off: list[str] = []
+        self.state_attributes_ignore: list[str] = []
+        self.ignored_event_sources: list[str] = []
+
+        self.timer_handle: CALLBACK_TYPE | None = None
+        self.block_timer_handle: CALLBACK_TYPE | None = None
+        self.start_time_event_hook: CALLBACK_TYPE | None = None
+        self.end_time_event_hook: CALLBACK_TYPE | None = None
+        # The configured constraint times; see the `start_time`/`end_time` properties
+        self.start_time_setting: str | None = None
+        self.end_time_setting: str | None = None
+
+        self.sensor_type: str | None = None
+        self.night_mode: dict[str, Any] | None = None
+        self.light_params_day: dict[str, Any] = {}
+        self.light_params_night: dict[str, Any] = {}
+        self.light_params: dict[str, Any] = {}
+        self.transition_behaviours: dict[str, str] = {}
+        self.block_timeout: int | None = None
+        self.disable_block = False
+        self.stay = False
         self.backoff = False
         self.backoff_count = 0
-        self.light_params_day = {}
-        self.light_params_night = {}
-        self.lightParams = {}
-        self.stay = False
-        self.transition_behaviours = {}
-        self.context = None
+        self.backoff_factor = 1.1
+        self.backoff_max = 300
+        self.previous_delay: float = DEFAULT_DELAY
+        self.context: Context | None = None
 
         self.log.debug(
             "Initialising EntityController entity with this configuration: %s", config
@@ -108,10 +155,10 @@ class Model:
         # Added here because machine-generated methods are used by the methods below.
         machine.add_model(self)
 
-        event.async_call_later(self.hass, STARTUP_DELAY, self.startup_delay_callback)
+        async_call_later(self.hass, STARTUP_DELAY, self.startup_delay_callback)
 
     @callback
-    def startup_delay_callback(self, evt):
+    def startup_delay_callback(self, _now: datetime) -> None:
         config = self.config
         self.config_static_strings(config)
         self.config_control_entities(config)
@@ -130,13 +177,13 @@ class Model:
         self.config_other(config)
         self.prepare_service_data()
 
-        if len(self.overrideEntities) > 0 and self.is_override_state_on():
+        if len(self.override_entities) > 0 and self.is_override_state_on():
             self.override()
             self.update(overridden_at=str(datetime.now()))
         else:
             self.start_monitoring()
 
-    def update(self, wait=False, **kwargs):
+    def update(self, wait: bool = False, **kwargs: Any) -> None:
         """Called from different methods to report a state attribute change"""
         for k, v in kwargs.items():
             if v is not None:
@@ -145,7 +192,7 @@ class Model:
         if not wait:
             self.entity.do_update()
 
-    def finalize(self):
+    def finalize(self) -> None:
         self.entity.do_update()
 
     # =====================================================
@@ -153,7 +200,7 @@ class Model:
     # =====================================================
 
     @callback
-    def sensor_state_change(self, event):
+    def sensor_state_change(self, event: Event[EventStateChangedData]) -> None:
         """State change callback for sensor entities"""
         entity = event.data["entity_id"]
         old = event.data["old_state"]
@@ -167,7 +214,7 @@ class Model:
             self.log.debug("sensor_state_change :: Ignore attribute only change")
             return
 
-        if new.state in self.SENSOR_ON_STATE and (
+        if new.state in self.sensor_states_on and (
             self.is_idle() or self.is_active_timer() or self.is_blocked()
         ):
             self.set_context(new.context)
@@ -175,7 +222,7 @@ class Model:
             self.sensor_on()
 
         if (
-            new.state in self.SENSOR_OFF_STATE
+            new.state in self.sensor_states_off
             and self.is_duration_sensor()
             and self.is_active_timer()
         ):
@@ -198,7 +245,7 @@ class Model:
                 )
 
     @callback
-    def override_state_change(self, event):
+    def override_state_change(self, event: Event[EventStateChangedData]) -> None:
         """State change callback for override entities"""
         entity = event.data["entity_id"]
         old = event.data["old_state"]
@@ -209,7 +256,7 @@ class Model:
             old,
             new,
         )
-        if new.state in self.OVERRIDE_ON_STATE and (
+        if new.state in self.override_states_on and (
             self.is_active()
             or self.is_active_timer()
             or self.is_idle()
@@ -220,7 +267,7 @@ class Model:
             self.override()
             self.update(overridden_at=str(datetime.now()))
         if (
-            new.state in self.OVERRIDE_OFF_STATE
+            new.state in self.override_states_off
             and self.is_override_state_off()
             and self.is_overridden()
         ):
@@ -228,7 +275,7 @@ class Model:
             self.enable()
 
     @callback
-    def state_entity_state_change(self, event):
+    def state_entity_state_change(self, event: Event[EventStateChangedData]) -> None:
         """State change callback for state entities.
 
         This can be called with either a state change or an attribute change.
@@ -289,16 +336,16 @@ class Model:
         if self.is_blocked() or self.is_active_stay_on():
             self.enable()
 
-    def _start_timer(self):
-        self.log.info("_start_timer :: Light params: %s", self.lightParams)
+    def _start_timer(self) -> None:
+        self.log.info("_start_timer :: Light params: %s", self.light_params)
         if self.backoff_count == 0:
-            self.previous_delay = self.lightParams.get(CONF_DELAY, DEFAULT_DELAY)
+            self.previous_delay = self.light_params.get(CONF_DELAY, DEFAULT_DELAY)
         else:
             self.log.debug(
                 "_start_timer :: Backoff: %s,  count: %s, delay%s, factor: %s",
                 self.backoff,
                 self.backoff_count,
-                self.lightParams.get(CONF_DELAY, DEFAULT_DELAY),
+                self.light_params.get(CONF_DELAY, DEFAULT_DELAY),
                 self.backoff_factor,
             )
             self.previous_delay = round(self.previous_delay * self.backoff_factor, 2)
@@ -311,17 +358,17 @@ class Model:
 
         # timer_handle holds the cancel callback while the timer is active, None
         # otherwise.
-        self.timer_handle = event.async_call_later(
+        self.timer_handle = async_call_later(
             self.hass, self.previous_delay, self.timer_expire
         )
         self.update(expires_at=expiry_time)
 
-    def _cancel_timer(self):
+    def _cancel_timer(self) -> None:
         if self.timer_handle:
             self.timer_handle()
             self.timer_handle = None
 
-    def _reset_timer(self):
+    def _reset_timer(self) -> bool:
         self.log.debug("_reset_timer :: Resetting timer: %s", self.backoff)
         self._cancel_timer()
         self.update(reset_at=datetime.now())
@@ -333,7 +380,7 @@ class Model:
         return True
 
     @callback
-    def timer_expire(self, _now=None):
+    def timer_expire(self, _now: datetime | None = None) -> None:
         self.log.debug("timer_expire :: Timer expired")
         self.timer_handle = None
         # A duration sensor that is still on overrides the timer
@@ -344,7 +391,7 @@ class Model:
             self.timer_expires()
 
     @callback
-    def block_timer_expire(self, _now=None):
+    def block_timer_expire(self, _now: datetime | None = None) -> None:
         self.log.debug("block_timer_expire :: Blocked Timer expired")
         self.block_timer_handle = None
         self.block_timer_expires()
@@ -353,7 +400,9 @@ class Model:
     # S T A T E   M A C H I N E   C O N D I T I O N S
     # =====================================================
 
-    def _first_entity_on(self, kind, entities, on_states):
+    def _first_entity_on(
+        self, kind: str, entities: list[str], on_states: list[str]
+    ) -> str | None:
         """Return the first of `entities` whose state is in `on_states`, if any."""
         for e in entities:
             s = self.hass.states.get(e)
@@ -372,44 +421,44 @@ class Model:
         self.log.debug("%s entities are OFF.", kind)
         return None
 
-    def _override_entity_state(self):
+    def _override_entity_state(self) -> str | None:
         return self._first_entity_on(
-            "Override", self.overrideEntities, self.OVERRIDE_ON_STATE
+            "Override", self.override_entities, self.override_states_on
         )
 
-    def is_override_state_off(self):
+    def is_override_state_off(self) -> bool:
         return self._override_entity_state() is None
 
-    def is_override_state_on(self):
+    def is_override_state_on(self) -> bool:
         return self._override_entity_state() is not None
 
-    def _sensor_entity_state(self):
+    def _sensor_entity_state(self) -> str | None:
         return self._first_entity_on(
-            "Sensor", self.sensorEntities, self.SENSOR_ON_STATE
+            "Sensor", self.sensor_entities, self.sensor_states_on
         )
 
-    def is_sensor_off(self):
+    def is_sensor_off(self) -> bool:
         return self._sensor_entity_state() is None
 
-    def is_sensor_on(self):
+    def is_sensor_on(self) -> bool:
         return self._sensor_entity_state() is not None
 
-    def _state_entity_state(self):
-        return self._first_entity_on("State", self.stateEntities, self.STATE_ON_STATE)
+    def _state_entity_state(self) -> str | None:
+        return self._first_entity_on("State", self.state_entities, self.state_states_on)
 
-    def is_state_entities_off(self):
+    def is_state_entities_off(self) -> bool:
         return self._state_entity_state() is None
 
-    def is_state_entities_on(self):
+    def is_state_entities_on(self) -> bool:
         return self._state_entity_state() is not None
 
-    def is_block_enabled(self):
+    def is_block_enabled(self) -> bool:
         return self.disable_block is False
 
-    def will_stay_on(self):
+    def will_stay_on(self) -> bool:
         return self.stay
 
-    def is_night(self):
+    def is_night(self) -> bool:
         if self.night_mode is None:
             return False  # if night mode is undefined, it's never night :)
         self.log.debug("NIGHT MODE ENABLED: %s", self.night_mode)
@@ -419,39 +468,39 @@ class Model:
             self.night_mode[CONF_END_TIME],
         )
 
-    def is_event_sensor(self):
+    def is_event_sensor(self) -> bool:
         return self.sensor_type == SENSOR_TYPE_EVENT
 
-    def is_duration_sensor(self):
+    def is_duration_sensor(self) -> bool:
         return self.sensor_type == SENSOR_TYPE_DURATION
 
-    def is_timer_expired(self):
+    def is_timer_expired(self) -> bool:
         return self.timer_handle is None
 
     # =====================================================
     # S T A T E   M A C H I N E   C A L L B A C K S
     # =====================================================
 
-    def on_enter_idle(self):
+    def on_enter_idle(self) -> None:
         self.log.debug("Entering idle")
         # Entering idle due to no events, set a new context with no parent
         self.set_context(None)
         self.do_transition_behaviour(CONF_ON_ENTER_IDLE)
         self.entity.reset_state()
 
-    def on_exit_idle(self):
+    def on_exit_idle(self) -> None:
         self.log.debug("Exiting idle")
         self.do_transition_behaviour(CONF_ON_EXIT_IDLE)
 
-    def on_enter_overridden(self):
+    def on_enter_overridden(self) -> None:
         self.log.debug("Entering overridden")
         self.do_transition_behaviour(CONF_ON_ENTER_OVERRIDDEN)
 
-    def on_exit_overridden(self):
+    def on_exit_overridden(self) -> None:
         self.log.debug("Exiting overridden")
         self.do_transition_behaviour(CONF_ON_EXIT_OVERRIDDEN)
 
-    def on_enter_active(self):
+    def on_enter_active(self) -> None:
         self.log.debug("Entering active")
         self.update(last_triggered_at=str(datetime.now()))
         self.backoff_count = 0
@@ -460,42 +509,42 @@ class Model:
         self._start_timer()
 
         self.log.debug(
-            "on_enter_active :: light params before turning on: %s", self.lightParams
+            "on_enter_active :: light params before turning on: %s", self.light_params
         )
         self.do_transition_behaviour(CONF_ON_ENTER_ACTIVE)
         self.enter()
 
-    def on_exit_active(self):
+    def on_exit_active(self) -> None:
         self.log.debug("Exiting active")
         self.log.debug("on_exit_active :: Turning off entities, cancelling timer")
         self._cancel_timer()
-        self.update(delay=self.lightParams.get(CONF_DELAY))
+        self.update(delay=self.light_params.get(CONF_DELAY))
         self.do_transition_behaviour(CONF_ON_EXIT_ACTIVE)
 
-    def on_enter_blocked(self):
+    def on_enter_blocked(self) -> None:
         self.log.debug("Entering blocked")
         self.update(blocked_at=datetime.now())
         self.update(blocked_by=self._state_entity_state())
 
         self.do_transition_behaviour(CONF_ON_ENTER_BLOCKED)
         if self.block_timeout:
-            self.block_timer_handle = event.async_call_later(
+            self.block_timer_handle = async_call_later(
                 self.hass, self.block_timeout, self.block_timer_expire
             )
             self.update(block_timeout=self.block_timeout)
 
-    def on_exit_blocked(self):
+    def on_exit_blocked(self) -> None:
         self.log.debug("Exiting blocked")
         self.do_transition_behaviour(CONF_ON_EXIT_BLOCKED)
         if self.block_timer_handle:
             self.block_timer_handle()
             self.block_timer_handle = None
 
-    def on_enter_constrained(self):
+    def on_enter_constrained(self) -> None:
         self.log.debug("Entering constrained")
         self.do_transition_behaviour(CONF_ON_ENTER_CONSTRAINED)
 
-    def on_exit_constrained(self):
+    def on_exit_constrained(self) -> None:
         self.log.debug("Exiting constrained")
         self.do_transition_behaviour(CONF_ON_EXIT_CONSTRAINED)
 
@@ -503,7 +552,7 @@ class Model:
     #    C O N F I G U R A T I O N  &  V A L I D A T I O N
     # =====================================================
 
-    def config_transition_behaviours(self, config):
+    def config_transition_behaviours(self, config: dict[str, Any]) -> None:
         self.transition_behaviours = dict(DEFAULT_TRANSITION_BEHAVIOURS)
         if CONF_BEHAVIOURS in config:
             self.transition_behaviours.update(config[CONF_BEHAVIOURS])
@@ -513,91 +562,91 @@ class Model:
             self.transition_behaviours,
         )
 
-    def config_control_entities(self, config):
-        self.controlEntities = []
-        self.add(self.controlEntities, config, CONF_CONTROL_ENTITY)
-        self.add(self.controlEntities, config, CONF_CONTROL_ENTITIES)
-        self.log.debug("Control Entities: %s", self.controlEntities)
+    def config_control_entities(self, config: dict[str, Any]) -> None:
+        self.control_entities = []
+        self._add(self.control_entities, config, CONF_CONTROL_ENTITY)
+        self._add(self.control_entities, config, CONF_CONTROL_ENTITIES)
+        self.log.debug("Control Entities: %s", self.control_entities)
 
-    def config_state_entities(self, config):
-        self.stateEntities = []
-        self.add(self.stateEntities, config, CONF_STATE_ENTITIES)
-        if len(self.stateEntities) > 0:
+    def config_state_entities(self, config: dict[str, Any]) -> None:
+        self.state_entities = []
+        self._add(self.state_entities, config, CONF_STATE_ENTITIES)
+        if len(self.state_entities) > 0:
             self.log.info(
                 "State Entities (explicitly defined - I hope you know what you are "
                 "doing): %s",
-                self.stateEntities,
+                self.state_entities,
             )
         else:
             # If no state entities are defined, use control entities as state
-            self.stateEntities = self.controlEntities.copy()
+            self.state_entities = self.control_entities.copy()
             self.log.debug(
                 "Added Control Entities as state entities (default): %s",
-                self.stateEntities,
+                self.state_entities,
             )
 
-        event.async_track_state_change_event(
-            self.hass, self.stateEntities, self.state_entity_state_change
+        async_track_state_change_event(
+            self.hass, self.state_entities, self.state_entity_state_change
         )
 
-    def config_off_entities(self, config):
-        self.triggerOnDeactivate = []
-        self.add(self.triggerOnDeactivate, config, CONF_TRIGGER_ON_DEACTIVATE)
-        if len(self.triggerOnDeactivate) > 0:
-            self.log.info("Off Entities: %s", self.triggerOnDeactivate)
+    def config_off_entities(self, config: dict[str, Any]) -> None:
+        self.trigger_on_deactivate = []
+        self._add(self.trigger_on_deactivate, config, CONF_TRIGGER_ON_DEACTIVATE)
+        if len(self.trigger_on_deactivate) > 0:
+            self.log.info("Off Entities: %s", self.trigger_on_deactivate)
 
-    def config_on_entities(self, config):
-        self.triggerOnActivate = []
-        self.add(self.triggerOnActivate, config, CONF_TRIGGER_ON_ACTIVATE)
-        if len(self.triggerOnActivate) > 0:
-            self.log.info("On Entities: %s", self.triggerOnActivate)
+    def config_on_entities(self, config: dict[str, Any]) -> None:
+        self.trigger_on_activate = []
+        self._add(self.trigger_on_activate, config, CONF_TRIGGER_ON_ACTIVATE)
+        if len(self.trigger_on_activate) > 0:
+            self.log.info("On Entities: %s", self.trigger_on_activate)
 
-    def config_sensor_entities(self, config):
-        self.sensorEntities = []
-        self.add(self.sensorEntities, config, CONF_SENSOR)
-        self.add(self.sensorEntities, config, CONF_SENSORS)
+    def config_sensor_entities(self, config: dict[str, Any]) -> None:
+        self.sensor_entities = []
+        self._add(self.sensor_entities, config, CONF_SENSOR)
+        self._add(self.sensor_entities, config, CONF_SENSORS)
 
-        if len(self.sensorEntities) == 0:
+        if len(self.sensor_entities) == 0:
             self.log.error(
                 "No sensor entities defined. You must define at least one sensor "
                 "entity."
             )
 
-        self.log.debug("Sensor Entities: %s", self.sensorEntities)
+        self.log.debug("Sensor Entities: %s", self.sensor_entities)
 
-        event.async_track_state_change_event(
-            self.hass, self.sensorEntities, self.sensor_state_change
+        async_track_state_change_event(
+            self.hass, self.sensor_entities, self.sensor_state_change
         )
 
-    def config_static_strings(self, config):
+    def config_static_strings(self, config: dict[str, Any]) -> None:
         # One copy of the defaults is shared by every entity type, as before.
         default_on = list(DEFAULT_STATES_ON)
         default_off = list(DEFAULT_STATES_OFF)
-        self.CONTROL_ON_STATE = config.get("control_states_on", default_on)
-        self.CONTROL_OFF_STATE = config.get("control_states_off", default_off)
-        self.SENSOR_ON_STATE = config.get("sensor_states_on", default_on)
-        self.SENSOR_OFF_STATE = config.get("sensor_states_off", default_off)
-        self.OVERRIDE_ON_STATE = config.get("override_states_on", default_on)
-        self.OVERRIDE_OFF_STATE = config.get("override_states_off", default_off)
-        self.STATE_ON_STATE = config.get("state_states_on", default_on)
-        self.STATE_OFF_STATE = config.get("state_states_off", default_off)
+        self.control_states_on = config.get("control_states_on", default_on)
+        self.control_states_off = config.get("control_states_off", default_off)
+        self.sensor_states_on = config.get("sensor_states_on", default_on)
+        self.sensor_states_off = config.get("sensor_states_off", default_off)
+        self.override_states_on = config.get("override_states_on", default_on)
+        self.override_states_off = config.get("override_states_off", default_off)
+        self.state_states_on = config.get("state_states_on", default_on)
+        self.state_states_off = config.get("state_states_off", default_off)
 
         on = config.get("state_strings_on", False)
         if on:
-            self.CONTROL_ON_STATE.extend(on)
-            self.CONTROL_ON_STATE.extend(on)
-            self.SENSOR_ON_STATE.extend(on)
-            self.OVERRIDE_ON_STATE.extend(on)
-            self.STATE_ON_STATE.extend(on)
+            self.control_states_on.extend(on)
+            self.control_states_on.extend(on)
+            self.sensor_states_on.extend(on)
+            self.override_states_on.extend(on)
+            self.state_states_on.extend(on)
 
         off = config.get("state_strings_off", False)
         if off:
-            self.CONTROL_OFF_STATE.extend(off)
-            self.SENSOR_OFF_STATE.extend(off)
-            self.OVERRIDE_OFF_STATE.extend(off)
-            self.STATE_OFF_STATE.extend(off)
+            self.control_states_off.extend(off)
+            self.sensor_states_off.extend(off)
+            self.override_states_off.extend(off)
+            self.state_states_off.extend(off)
 
-    def config_night_mode(self, config):
+    def config_night_mode(self, config: dict[str, Any]) -> None:
         """Configure night mode parameters.
 
         If night mode has no service data of its own, the day mode service data is
@@ -624,9 +673,9 @@ class Model:
         if CONF_END_TIME not in night_mode:
             self.log.error("Night mode requires a end_time parameter !")
 
-    def config_state_attributes_ignore(self, config):
-        self.add(self.ignored_event_sources, config, CONF_IGNORED_EVENT_SOURCES)
-        self.add(self.state_attributes_ignore, config, CONF_STATE_ATTRIBUTES_IGNORE)
+    def config_state_attributes_ignore(self, config: dict[str, Any]) -> None:
+        self._add(self.ignored_event_sources, config, CONF_IGNORED_EVENT_SOURCES)
+        self._add(self.state_attributes_ignore, config, CONF_STATE_ATTRIBUTES_IGNORE)
         self.log.debug(
             "Ignoring events (state changes) caused by the following entities): %s",
             self.ignored_event_sources,
@@ -636,7 +685,7 @@ class Model:
             self.state_attributes_ignore,
         )
 
-    def config_normal_mode(self, config):
+    def config_normal_mode(self, config: dict[str, Any]) -> None:
         self.log.info("Service data set up")
         self.light_params_day = {
             CONF_DELAY: config.get(CONF_DELAY, DEFAULT_DELAY),
@@ -645,30 +694,28 @@ class Model:
         }
 
     @property
-    def start_time(self):
-        return time_utils.resolve_now_offset(self._start_time_private)
+    def start_time(self) -> str:
+        return time_utils.resolve_now_offset(self.start_time_setting)
 
     @property
-    def end_time(self):
-        return time_utils.resolve_now_offset(self._end_time_private)
+    def end_time(self) -> str:
+        return time_utils.resolve_now_offset(self.end_time_setting)
 
-    def config_times(self, config):
-        self._start_time_private = None
-        self._end_time_private = None
+    def config_times(self, config: dict[str, Any]) -> None:
         if CONF_START_TIME in config and CONF_END_TIME in config:
             # For the `now + N (M)` debugging syntax, the initial setup uses the raw
             # value (with the first delay M)...
-            self._start_time_private = config.get(CONF_START_TIME)
-            self._end_time_private = config.get(CONF_END_TIME)
+            self.start_time_setting = config.get(CONF_START_TIME)
+            self.end_time_setting = config.get(CONF_END_TIME)
             parsed_start = time_utils.parse_time(self.hass, self.start_time)
             parsed_end = time_utils.parse_time(self.hass, self.end_time)
             # ...and later ones the normal delay N.
             sparts = re.search(r"^(now\s*[+-]\s*\d+)", config.get(CONF_START_TIME))
             if sparts is not None:
-                self._start_time_private = sparts.group(1)
+                self.start_time_setting = sparts.group(1)
             eparts = re.search(r"^(now\s*[+-]\s*\d+)", config.get(CONF_END_TIME))
             if eparts is not None:
-                self._end_time_private = eparts.group(1)
+                self.end_time_setting = eparts.group(1)
 
             self.update(start=self.start_time)
             self.update(end=self.end_time)
@@ -678,10 +725,10 @@ class Model:
             self.log.debug("Setting FIRST START callback for %s", parsed_start)
             self.log.debug("Setting FIRST END callback for %s", parsed_end)
 
-            self.start_time_event_hook = event.async_track_point_in_time(
+            self.start_time_event_hook = async_track_point_in_time(
                 self.hass, self.start_time_callback, parsed_start
             )
-            self.end_time_event_hook = event.async_track_point_in_time(
+            self.end_time_event_hook = async_track_point_in_time(
                 self.hass, self.end_time_callback, parsed_end
             )
 
@@ -689,22 +736,22 @@ class Model:
                 self.log.debug(
                     "Constrain period active. Scheduling transition to 'constrained'"
                 )
-                event.async_call_later(self.hass, 1, self.constrain_entity)
+                async_call_later(self.hass, 1, self.constrain_entity)
 
         self.log_config()
 
-    def config_override_entities(self, config):
-        self.overrideEntities = []
-        self.add(self.overrideEntities, config, "override")
-        self.add(self.overrideEntities, config, "overrides")
+    def config_override_entities(self, config: dict[str, Any]) -> None:
+        self.override_entities = []
+        self._add(self.override_entities, config, "override")
+        self._add(self.override_entities, config, "overrides")
 
-        if len(self.overrideEntities) > 0:
-            self.log.debug("Override Entities: %s", self.overrideEntities)
-            event.async_track_state_change_event(
-                self.hass, self.overrideEntities, self.override_state_change
+        if len(self.override_entities) > 0:
+            self.log.debug("Override Entities: %s", self.override_entities)
+            async_track_state_change_event(
+                self.hass, self.override_entities, self.override_state_change
             )
 
-    def config_other(self, config):
+    def config_other(self, config: dict[str, Any]) -> None:
         self.config[CONF_SENSOR_RESETS_TIMER] = config.get(CONF_SENSOR_RESETS_TIMER)
 
         self.block_timeout = config.get(CONF_BLOCK_TIMEOUT, None)
@@ -735,12 +782,12 @@ class Model:
     # =====================================================
 
     @callback
-    def constrain_entity(self, evt):
+    def constrain_entity(self, _now: datetime) -> None:
         """Used on setup if the current time requires starting in constrained."""
         self.constrain()
 
     @callback
-    def end_time_callback(self, evt):
+    def end_time_callback(self, _now: datetime) -> None:
         """Called at `end_time`: constrains EC and schedules the next end time."""
         self.log.debug("end_time_callback :: Triggered")
         # must be reparsed to get up to date sunset/sunrise times
@@ -750,7 +797,7 @@ class Model:
         self.log.debug(
             "end_time_callback :: New callback set to %s (future)", parsed_end
         )
-        self.end_time_event_hook = event.async_track_point_in_time(
+        self.end_time_event_hook = async_track_point_in_time(
             self.hass, self.end_time_callback, parsed_end
         )
         self.update(end_time=parsed_end)
@@ -760,7 +807,7 @@ class Model:
         self.constrain()
 
     @callback
-    def start_time_callback(self, evt):
+    def start_time_callback(self, _now: datetime) -> None:
         """Called at `start_time`: enables EC and schedules the next start time."""
         self.log.debug("start_time_callback :: Triggered")
         # must be reparsed to get up to date sunset/sunrise times
@@ -770,7 +817,7 @@ class Model:
         self.log.debug(
             "start_time_callback :: New callback set to %s (future)", parsed_start
         )
-        self.start_time_event_hook = event.async_track_point_in_time(
+        self.start_time_event_hook = async_track_point_in_time(
             self.hass, self.start_time_callback, parsed_start
         )
 
@@ -789,9 +836,11 @@ class Model:
     #    H E L P E R   F U N C T I O N S
     # =====================================================
 
-    def _call_with_service_data(self, entities, service, data_key):
+    def _call_with_service_data(
+        self, entities: list[str], service: str, data_key: str
+    ) -> None:
         """Call `service` on each entity, with the current light params' `data_key`."""
-        service_data = self.lightParams.get(data_key)
+        service_data = self.light_params.get(data_key)
         for e in entities:
             if service_data is not None:
                 self.log.debug(
@@ -809,40 +858,42 @@ class Model:
                 )
                 self.call_service(e, service)
 
-    def turn_on_control_entities(self):
+    def turn_on_control_entities(self) -> None:
         # Entities defined outside of control entities via `trigger_on_activate`.
         self._call_with_service_data(
-            self.triggerOnActivate, "turn_on", CONF_SERVICE_DATA
+            self.trigger_on_activate, "turn_on", CONF_SERVICE_DATA
         )
-        self._call_with_service_data(self.controlEntities, "turn_on", CONF_SERVICE_DATA)
+        self._call_with_service_data(
+            self.control_entities, "turn_on", CONF_SERVICE_DATA
+        )
 
-    def turn_off_control_entities(self):
+    def turn_off_control_entities(self) -> None:
         # Entities defined outside of control entities via `trigger_on_deactivate`.
         # They are triggered, so they get turn_on rather than turn_off.
         self._call_with_service_data(
-            self.triggerOnDeactivate, "turn_on", CONF_SERVICE_DATA_OFF
+            self.trigger_on_deactivate, "turn_on", CONF_SERVICE_DATA_OFF
         )
         self._call_with_service_data(
-            self.controlEntities, "turn_off", CONF_SERVICE_DATA_OFF
+            self.control_entities, "turn_off", CONF_SERVICE_DATA_OFF
         )
 
-    def prepare_service_data(self):
+    def prepare_service_data(self) -> None:
         """Pick the day or night service parameters.
 
         Called when entering active state and on initial set up.
         """
         if self.is_night():
             self.log.debug("Using NIGHT MODE parameters: %s", self.light_params_night)
-            self.lightParams = self.light_params_night
+            self.light_params = self.light_params_night
             self.update(mode=MODE_NIGHT)
         else:
             self.log.debug("Using DAY MODE parameters: %s", self.light_params_day)
-            self.lightParams = self.light_params_day
+            self.light_params = self.light_params_day
             if self.night_mode is not None:
                 self.update(mode=MODE_DAY)  # only show when night mode set up
-        self.update(delay=self.lightParams.get(CONF_DELAY))
+        self.update(delay=self.light_params.get(CONF_DELAY))
 
-    def call_service(self, entity, service, **service_data):
+    def call_service(self, entity: str, service: str, **service_data: Any) -> None:
         """Helper for calling HA services with the correct parameters"""
         self.log.debug("call_service :: Calling service %s on %s", service, entity)
 
@@ -901,7 +952,7 @@ class Model:
         # Otherwise, ignore only EC-generated events
         return context.id.startswith(f"{DOMAIN_SHORT}_")
 
-    def add(self, target, config, key):
+    def _add(self, target: list[str], config: dict[str, Any], key: str) -> None:
         """Add the value of `config[key]` (a string or a list) to `target`."""
         self.log.debug("add :: Adding config key `%s` to the config list", key)
         v = config.get(key)
@@ -921,21 +972,21 @@ class Model:
                 v,
             )
 
-    def log_config(self):
+    def log_config(self) -> None:
         self.log.debug("--------------------------------------------------")
         self.log.debug("       C O N F I G U R A T I O N   D U M P        ")
         self.log.debug("--------------------------------------------------")
         self.log.debug("Entity Controller       %s", self.name)
-        self.log.debug("Sensor Entities         %s", self.sensorEntities)
-        self.log.debug("Control Entities:       %s", self.controlEntities)
-        self.log.debug("State Entities:         %s", self.stateEntities)
-        self.log.debug("Activate Trigger E.:    %s", self.triggerOnActivate)
-        self.log.debug("Deactivate Trigger E.:  %s", self.triggerOnDeactivate)
+        self.log.debug("Sensor Entities         %s", self.sensor_entities)
+        self.log.debug("Control Entities:       %s", self.control_entities)
+        self.log.debug("State Entities:         %s", self.state_entities)
+        self.log.debug("Activate Trigger E.:    %s", self.trigger_on_activate)
+        self.log.debug("Deactivate Trigger E.:  %s", self.trigger_on_deactivate)
         self.log.debug("Ignored state attrs:    %s", self.state_attributes_ignore)
-        self.log.debug("Light params:           %s", self.lightParams)
+        self.log.debug("Light params:           %s", self.light_params)
         self.log.debug("        -------        Time        -------        ")
-        self.log.debug("Start time:             %s", self._start_time_private)
-        self.log.debug("End time:               %s", self._end_time_private)
+        self.log.debug("Start time:             %s", self.start_time_setting)
+        self.log.debug("End time:               %s", self.end_time_setting)
         self.log.debug("DT Now:                 %s", dt.now())
         self.log.debug("datetime Now:           %s", datetime.now())
         self.log.debug("Next Sunrise:           %s", time_utils.next_sunrise(self.hass))
@@ -946,7 +997,7 @@ class Model:
         self.log.debug("Transition Behaviours: %s", self.transition_behaviours)
         self.log.debug("--------------------------------------------------")
 
-    def do_transition_behaviour(self, behaviour):
+    def do_transition_behaviour(self, behaviour: str) -> None:
         """Act on the configured behaviour for a state transition."""
         action = self.transition_behaviours.get(behaviour)
         self.log.debug("%10s | Performing Transition Behaviour: %s", behaviour, action)

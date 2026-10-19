@@ -17,6 +17,10 @@ along with Entity Controller.  If not, see <https://www.gnu.org/licenses/>.
 Entity Service Definitions.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import homeassistant.helpers.config_validation as cv
 import homeassistant.util.dt as dt_util
 import voluptuous as vol
@@ -34,10 +38,13 @@ from .const import (
     SERVICE_SET_NIGHT_MODE,
 )
 
+if TYPE_CHECKING:
+    from .entity import EntityController
+
 TIME_STR_FORMAT = "%H:%M:%S"
 
 
-def async_setup_entity_services(component: EntityComponent):
+def async_setup_entity_services(component: EntityComponent) -> None:
     """Setup Entity services."""
 
     component.logger.debug("Setting up entity services")
@@ -63,25 +70,20 @@ def async_setup_entity_services(component: EntityComponent):
         "async_set_night_mode",
     )
 
-    return True
-
 
 @callback
-def async_entity_service_activate(self):
+def async_entity_service_activate(self: EntityController) -> None:
     """Activates the entity controller"""
-
-    if self.model is None:
-        return
 
     self.model.log.debug("Activating the Entity Controller")
     self.model.activate()
 
 
 @callback
-def async_entity_service_clear_block(self):
+def async_entity_service_clear_block(self: EntityController) -> None:
     """Clear the block property, if set"""
 
-    if self.model is None or self.model.state != "blocked":
+    if self.model.state != "blocked":
         return
 
     self.model.log.debug("Clearing Blocked state")
@@ -89,10 +91,10 @@ def async_entity_service_clear_block(self):
 
 
 @callback
-def async_entity_service_enable_block(self):
+def async_entity_service_enable_block(self: EntityController) -> None:
     """Enable the block property, if timer is active"""
 
-    if self.model is None or self.model.state != "active_timer":
+    if self.model.state != "active_timer":
         return
 
     self.model.log.debug("Enabling Blocked state")
@@ -100,7 +102,7 @@ def async_entity_service_enable_block(self):
 
 
 @callback
-def async_entity_service_enable_stay_mode(self):
+def async_entity_service_enable_stay_mode(self: EntityController) -> None:
     self.model.log.debug(
         "Enable stay mode - Control entities will remain on until manually turned off"
     )
@@ -108,27 +110,29 @@ def async_entity_service_enable_stay_mode(self):
 
 
 @callback
-def async_entity_service_disable_stay_mode(self):
+def async_entity_service_disable_stay_mode(self: EntityController) -> None:
     self.model.log.debug("Disable stay mode - Control entities will be managed by EC")
     self.model.stay = False
 
 
 @callback
-def async_entity_service_set_night_mode(self, start_time=None, end_time=None):
+def async_entity_service_set_night_mode(
+    self: EntityController, start_time: str | None = None, end_time: str | None = None
+) -> None:
     """Changes the night mode start and/or end times"""
 
-    if self.model is None or self.model.night_mode is None:
+    if self.model.night_mode is None:
         return
 
     if start_time == "now":
         start_time = dt_util.as_local(dt_util.utcnow()).strftime(TIME_STR_FORMAT)
     elif start_time == "constraint":
-        start_time = self.model._start_time_private
+        start_time = self.model.start_time_setting
 
     if end_time == "now":
         end_time = dt_util.as_local(dt_util.utcnow()).strftime(TIME_STR_FORMAT)
     elif end_time == "constraint":
-        end_time = self.model._end_time_private
+        end_time = self.model.end_time_setting
 
     if start_time is None and end_time is None:
         start_time = end_time = "00:00:00"

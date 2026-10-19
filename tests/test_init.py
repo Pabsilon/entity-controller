@@ -1,6 +1,8 @@
 """Smoke tests for the Entity Controller integration."""
 
-from homeassistant.core import HomeAssistant
+import pytest
+from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.setup import async_setup_component
 
 # Importing the integration here makes sure our `custom_components` package is the
@@ -158,3 +160,32 @@ async def test_multiple_controllers_are_independent(
 
     await advance(hass, freezer, DELAY + 1)
     assert ec_state(hass) == "idle"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="State is written mid-transition, so `active` shows up before active_timer",
+)
+async def test_state_history(
+    hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
+) -> None:
+    """Only settled states are written; transitions don't leak intermediate ones."""
+    await _setup(hass, setup_ec)
+    history: list[str] = []
+
+    @callback
+    def record(event: Event[EventStateChangedData]) -> None:
+        old, new = event.data["old_state"], event.data["new_state"]
+        if old.state != new.state:
+            history.append(new.state)
+
+    async_track_state_change_event(hass, ENTITY_ID, record)
+
+    hass.states.async_set(SENSOR, "on")
+    await hass.async_block_till_done()
+    hass.states.async_set(LIGHT, "on", {"brightness": 10})
+    await hass.async_block_till_done()
+    hass.states.async_set(LIGHT, "off")
+    await hass.async_block_till_done()
+
+    assert history == ["active_timer", "blocked", "idle"]
