@@ -53,13 +53,22 @@ docker run --rm -v "$PWD":/github/workspace ghcr.io/home-assistant/hassfest
 The version lives in two places, which must match: `pyproject.toml` and
 `custom_components/entity_controller/manifest.json`.
 
-1. Bump the version in both files.
+1. Bump the version in both files, then run `uv lock` (the lock file records the version, and CI
+   checks it with `uv sync --locked`).
 2. Add an entry to `CHANGELOG.md`.
-3. Commit, then tag and push:
+3. Commit, then tag and push. The tag is what publishes the release:
    ```bash
    git tag vX.Y.Z
-   git push origin master --tags
+   git push origin master vX.Y.Z
    ```
 
 The `Release` workflow checks the tag against both files, builds `entity_controller.zip` and
-publishes a GitHub Release with it. HACS installs from that zip.
+publishes a GitHub Release with it. HACS installs from that zip, so a version without a release
+can't be installed.
+
+### Pre-releases
+
+Use a [PEP 440](https://peps.python.org/pep-0440/) pre-release version, such as `10.1.0b1` (tag
+`v10.1.0b1`), or `a1`/`rc1`. The workflow publishes those as GitHub pre-releases. HACS only
+offers them to users who enable **Show beta versions** for the repository, so everyone else stays
+on the latest stable release.
