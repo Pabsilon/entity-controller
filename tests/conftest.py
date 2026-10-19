@@ -6,10 +6,12 @@ from typing import Any
 
 import pytest
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.helpers.entity_component import DATA_INSTANCES
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.entity_controller.const import DOMAIN, STARTUP_DELAY
+from custom_components.entity_controller.entity import EntityController
 
 # Domains whose turn_on/turn_off services are faked. `homeassistant` is used for
 # groups, `script` for trigger_on_activate/trigger_on_deactivate.
@@ -22,16 +24,6 @@ def auto_enable_custom_integrations(enable_custom_integrations):
     return
 
 
-@pytest.fixture(autouse=True)
-async def utc_time_zone(hass: HomeAssistant) -> None:
-    """Run HA in UTC.
-
-    EC mixes `datetime.now()` (system local time, frozen as UTC by `freezer`) with
-    `dt.now()` (HA's time zone). They only agree when the two zones match.
-    """
-    await hass.config.async_set_time_zone("UTC")
-
-
 async def advance(hass: HomeAssistant, freezer, seconds: float) -> None:
     """Move HA's clock forward and run whatever timers became due."""
     freezer.tick(timedelta(seconds=seconds))
@@ -41,6 +33,12 @@ async def advance(hass: HomeAssistant, freezer, seconds: float) -> None:
 
 def ec_state(hass: HomeAssistant, entity_id: str = f"{DOMAIN}.room") -> str:
     return hass.states.get(entity_id).state
+
+
+def get_entity(
+    hass: HomeAssistant, entity_id: str = f"{DOMAIN}.room"
+) -> EntityController:
+    return hass.data[DATA_INSTANCES][DOMAIN].get_entity(entity_id)
 
 
 class ServiceCalls:

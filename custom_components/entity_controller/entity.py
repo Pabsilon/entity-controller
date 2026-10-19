@@ -3,8 +3,8 @@
 import logging
 from typing import Any
 
-from homeassistant.const import CONF_NAME
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.const import CONF_NAME, EVENT_HOMEASSISTANT_STOP
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity import Entity
 from transitions.extensions import HierarchicalMachine
 
@@ -67,7 +67,18 @@ class EntityController(Entity):
         self._attributes = {
             k: v for k, v in self._attributes.items() if k in PERSISTED_STATE_ATTRIBUTES
         }
-        self.do_update()
+
+    async def async_added_to_hass(self) -> None:
+        """Stop the model's timers when the entity is removed or HA stops."""
+
+        @callback
+        def on_stop(_event: Event) -> None:
+            self.model.shutdown()
+
+        self.async_on_remove(self.model.shutdown)
+        self.async_on_remove(
+            self.hass.bus.async_listen(EVENT_HOMEASSISTANT_STOP, on_stop)
+        )
 
     @callback
     def do_update(self) -> None:

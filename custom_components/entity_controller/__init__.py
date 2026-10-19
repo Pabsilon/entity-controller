@@ -21,14 +21,12 @@ Documentation:    https://github.com/Pabsilon/entity-controller
 """
 
 import logging
-from datetime import datetime
 
 import homeassistant.helpers.config_validation as cv
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
-from homeassistant.util import dt
 
 from .config import ENTITY_SCHEMA
 from .const import DOMAIN
@@ -43,16 +41,6 @@ PLATFORM_SCHEMA = cv.schema_with_slug_keys(ENTITY_SCHEMA)
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up an Entity Controller for each configured key."""
-    system_tz = str(datetime.now().astimezone().tzinfo)
-    ha_tz = dt.as_local(dt.now()).tzname()
-    if system_tz != str(ha_tz):
-        _LOGGER.error(
-            "Timezones do not Match. Mismatched timezones may cause unintended "
-            "behaviours."
-        )
-        _LOGGER.error("System DateTime: %s", system_tz)
-        _LOGGER.error("Home Assistant DateTime: %s", ha_tz)
-
     component = EntityComponent[EntityController](_LOGGER, DOMAIN, hass)
 
     integration = await async_get_integration(hass, DOMAIN)
@@ -72,8 +60,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     for block in config[DOMAIN]:
         _LOGGER.info("Domain Configuration: %s", block)
         for key, ec_config in block.items():
-            ec_config = ec_config or {}
-            ec_config["name"] = key
+            ec_config = {**(ec_config or {}), "name": key}
             devices.append(EntityController(hass, ec_config, machine))
 
     await component.async_add_entities(devices)

@@ -121,10 +121,6 @@ async def test_override_custom_state_strings(
 # Stay mode
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="The timer still runs in stay mode and raises MachineError when it expires",
-)
 async def test_stay_mode(
     hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC, caplog
 ) -> None:

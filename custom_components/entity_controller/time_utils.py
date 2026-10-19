@@ -2,7 +2,7 @@
 
 import logging
 import re
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 
 from homeassistant.const import SUN_EVENT_SUNRISE, SUN_EVENT_SUNSET
 from homeassistant.core import HomeAssistant
@@ -75,12 +75,12 @@ def make_naive(dts: datetime) -> datetime:
 
 
 def sunset(hass: HomeAssistant) -> datetime:
-    t = get_astral_event_date(hass, SUN_EVENT_SUNSET, datetime.now().replace(hour=0))
+    t = get_astral_event_date(hass, SUN_EVENT_SUNSET, dt.now().date())
     return dt.as_local(t)
 
 
 def sunrise(hass: HomeAssistant) -> datetime:
-    t = get_astral_event_date(hass, SUN_EVENT_SUNRISE, datetime.now().replace(hour=0))
+    t = get_astral_event_date(hass, SUN_EVENT_SUNRISE, dt.now().date())
     return dt.as_local(t)
 
 
@@ -99,12 +99,15 @@ def next_sunset(hass: HomeAssistant, offset: int = 0) -> datetime:
 
 
 def futurize(timet: time | datetime) -> datetime:
-    """Return the next occurrence of `timet`: today, or tomorrow if it has passed."""
-    try:
-        t = datetime.combine(date.today(), timet)
-    except TypeError:
-        t = timet
-    now = datetime.now()
+    """Return the next occurrence of `timet`: today, or tomorrow if it has passed.
+
+    A naive time or datetime is taken to be in HA's time zone.
+    """
+    now = dt.now()
+    if isinstance(timet, datetime):
+        t = timet if timet.tzinfo else timet.replace(tzinfo=now.tzinfo)
+    else:
+        t = datetime.combine(now.date(), timet, tzinfo=now.tzinfo)
     while t <= now:
         t = t + timedelta(days=1)
     return t

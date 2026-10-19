@@ -1,7 +1,10 @@
 """Night mode and start/end time constraints."""
 
+from datetime import datetime
+
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.entity_controller.const import DOMAIN
@@ -34,8 +37,16 @@ async def _motion(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
 
 
+@pytest.fixture(autouse=True, params=["America/Los_Angeles", "Pacific/Auckland"])
+async def time_zone(hass: HomeAssistant, request) -> None:
+    """Run every test in two zones, one of them a day ahead of UTC."""
+    await hass.config.async_set_time_zone(request.param)
+
+
 async def _move_to(hass: HomeAssistant, freezer, when: str) -> None:
-    freezer.move_to(when)
+    """Move the clock to `when`, a local time in HA's time zone."""
+    local = datetime.fromisoformat(when).replace(tzinfo=dt_util.get_default_time_zone())
+    freezer.move_to(local)
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
 
@@ -62,7 +73,7 @@ async def test_night_mode(
     brightness: int,
     delay: int,
 ) -> None:
-    freezer.move_to(now)
+    await _move_to(hass, freezer, now)
     await _setup(
         hass, setup_ec, night_mode=NIGHT_MODE, service_data={"brightness": 200}
     )
@@ -80,7 +91,7 @@ async def test_night_mode(
 async def test_night_mode_follows_the_clock(
     hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
 ) -> None:
-    freezer.move_to("2026-10-19 19:55:00")
+    await _move_to(hass, freezer, "2026-10-19 19:55:00")
     await _setup(hass, setup_ec, night_mode=NIGHT_MODE)
 
     await _motion(hass)
@@ -98,7 +109,7 @@ async def test_night_mode_follows_the_clock(
 async def test_night_mode_service_data_off(
     hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
 ) -> None:
-    freezer.move_to("2026-10-19 21:00:00")
+    await _move_to(hass, freezer, "2026-10-19 21:00:00")
     await _setup(
         hass,
         setup_ec,
@@ -114,7 +125,7 @@ async def test_night_mode_service_data_off(
 async def test_set_night_mode_service(
     hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
 ) -> None:
-    freezer.move_to("2026-10-19 12:00:00")
+    await _move_to(hass, freezer, "2026-10-19 12:00:00")
     await _setup(hass, setup_ec, night_mode=NIGHT_MODE)
 
     await hass.services.async_call(
@@ -141,16 +152,13 @@ async def test_set_night_mode_service(
 
 # Constraints
 
-# EC keeps a start and an end time tracker scheduled for as long as it lives.
-lingering_timers = pytest.mark.parametrize("expected_lingering_timers", [True])
 WINDOW = {"start_time": "08:00:00", "end_time": "20:00:00"}
 
 
-@lingering_timers
 async def test_constrained_outside_window(
     hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
 ) -> None:
-    freezer.move_to("2026-10-19 21:00:00")
+    await _move_to(hass, freezer, "2026-10-19 21:00:00")
     await _setup(hass, setup_ec, **WINDOW)
     await advance(hass, freezer, 2)
     assert ec_state(hass) == "constrained"
@@ -172,11 +180,10 @@ async def test_constrained_outside_window(
     assert ec_state(hass) == "constrained"
 
 
-@lingering_timers
 async def test_not_constrained_inside_window(
     hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
 ) -> None:
-    freezer.move_to("2026-10-19 12:00:00")
+    await _move_to(hass, freezer, "2026-10-19 12:00:00")
     await _setup(hass, setup_ec, **WINDOW)
     await advance(hass, freezer, 2)
     assert ec_state(hass) == "idle"
@@ -185,11 +192,10 @@ async def test_not_constrained_inside_window(
     assert ec_state(hass) == "constrained"
 
 
-@lingering_timers
 async def test_window_closing_leaves_light_on(
     hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
 ) -> None:
-    freezer.move_to("2026-10-19 19:55:00")
+    await _move_to(hass, freezer, "2026-10-19 19:55:00")
     await _setup(hass, setup_ec, **WINDOW, delay=600)
     await _motion(hass)
 
@@ -202,15 +208,10 @@ async def test_window_closing_leaves_light_on(
     assert ec_state(hass) == "blocked"
 
 
-@lingering_timers
-@pytest.mark.xfail(
-    strict=True,
-    reason="end_time_callback runs on_enter_constrained, and so does the transition",
-)
 async def test_window_closing_turns_light_off(
     hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
 ) -> None:
-    freezer.move_to("2026-10-19 19:55:00")
+    await _move_to(hass, freezer, "2026-10-19 19:55:00")
     await _setup(
         hass, setup_ec, **WINDOW, delay=600, behaviours={"on_enter_constrained": "off"}
     )
@@ -221,17 +222,34 @@ async def test_window_closing_turns_light_off(
     assert len(calls.turned_off(LIGHT)) == 1
 
 
-@lingering_timers
+async def test_window_opening_runs_behaviour_once(
+    hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
+) -> None:
+    await _move_to(hass, freezer, "2026-10-19 21:00:00")
+    await _setup(
+        hass,
+        setup_ec,
+        **WINDOW,
+        behaviours={"on_exit_constrained": "on", "on_enter_idle": "ignore"},
+    )
+    await advance(hass, freezer, 2)
+    assert ec_state(hass) == "constrained"
+
+    await _move_to(hass, freezer, "2026-10-20 08:00:01")
+    assert ec_state(hass) == "idle"
+    assert len(calls.turned_on(LIGHT)) == 1
+
+
 async def test_sun_based_window(
     hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
 ) -> None:
-    # Near Greenwich, so UTC is local solar time: in October the sun sets around
-    # 17:45 and rises around 07:30.
+    # In London in mid October the sun rises around 07:35 and sets around 17:55.
+    await hass.config.async_set_time_zone("Europe/London")
     hass.config.latitude = 51.48
     hass.config.longitude = 0.0
     window = {"start_time": "sunset - 00:30:00", "end_time": "sunrise + 00:30:00"}
 
-    freezer.move_to("2026-10-19 12:00:00")
+    await _move_to(hass, freezer, "2026-10-19 12:00:00")
     await _setup(hass, setup_ec, **window)
     await advance(hass, freezer, 2)
     assert ec_state(hass) == "constrained"

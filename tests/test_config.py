@@ -3,9 +3,9 @@
 import pytest
 from homeassistant.core import HomeAssistant
 
-from custom_components.entity_controller.const import DOMAIN
+from custom_components.entity_controller.const import DEFAULT_STATES_ON, DOMAIN
 
-from .conftest import ServiceCalls, SetupEC, advance, ec_state
+from .conftest import ServiceCalls, SetupEC, advance, ec_state, get_entity
 
 ENTITY_ID = f"{DOMAIN}.room"
 SENSOR = "binary_sensor.motion"
@@ -189,6 +189,26 @@ async def test_state_strings_apply_to_every_entity_type(
     await _set(hass, SENSOR, "disengaged")
     await _set(hass, SENSOR, "engaged")
     assert ec_state(hass) == "blocked"
+
+
+async def test_state_string_lists_are_separate(
+    hass: HomeAssistant, setup_ec: SetupEC
+) -> None:
+    sensor_states_on = ["detected"]
+    await setup_ec(
+        {
+            "sensor": SENSOR,
+            "entity": LIGHT,
+            "sensor_states_on": sensor_states_on,
+            "state_strings_on": ["engaged"],
+        }
+    )
+    model = get_entity(hass).model
+    assert model.sensor_states_on == ["detected", "engaged"]
+    assert model.control_states_on == [*DEFAULT_STATES_ON, "engaged"]
+    assert model.control_states_on is not model.state_states_on
+    # The configured list itself is left alone.
+    assert sensor_states_on == ["detected"]
 
 
 # Transition behaviours

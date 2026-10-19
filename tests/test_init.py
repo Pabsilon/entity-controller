@@ -9,7 +9,14 @@ from homeassistant.setup import async_setup_component
 # one Python caches, instead of the plugin's testing_config package.
 from custom_components.entity_controller.const import DOMAIN
 
-from .conftest import STARTUP_DELAY, ServiceCalls, SetupEC, advance, ec_state
+from .conftest import (
+    STARTUP_DELAY,
+    ServiceCalls,
+    SetupEC,
+    advance,
+    ec_state,
+    get_entity,
+)
 
 ENTITY_ID = f"{DOMAIN}.room"
 SENSOR = "binary_sensor.motion"
@@ -105,9 +112,6 @@ async def test_own_state_changes_are_ignored(
     assert hass.states.get(LIGHT).state == "on"
     assert ec_state(hass) == "active_timer"
 
-    await advance(hass, freezer, DELAY + 1)
-    assert ec_state(hass) == "idle"
-
 
 async def test_attributes(
     hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
@@ -158,14 +162,7 @@ async def test_multiple_controllers_are_independent(
     assert ec_state(hass, f"{DOMAIN}.room2") == "idle"
     assert calls.turned_on("light.room2") == []
 
-    await advance(hass, freezer, DELAY + 1)
-    assert ec_state(hass) == "idle"
 
-
-@pytest.mark.xfail(
-    strict=True,
-    reason="State is written mid-transition, so `active` shows up before active_timer",
-)
 async def test_state_history(
     hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
 ) -> None:
@@ -189,3 +186,41 @@ async def test_state_history(
     await hass.async_block_till_done()
 
     assert history == ["active_timer", "blocked", "idle"]
+
+
+async def test_removing_the_entity_stops_its_timers(
+    hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC
+) -> None:
+    await _setup(hass, setup_ec)
+    hass.states.async_set(SENSOR, "on")
+    await hass.async_block_till_done()
+    assert ec_state(hass) == "active_timer"
+
+    await get_entity(hass).async_remove()
+    hass.states.async_set(SENSOR, "off")
+    hass.states.async_set(SENSOR, "on")
+    await advance(hass, freezer, DELAY + 1)
+    assert hass.states.get(ENTITY_ID) is None
+    assert calls.turned_off() == []
+
+
+async def test_config_is_not_modified(hass: HomeAssistant, setup_ec: SetupEC) -> None:
+    config = dict(CONFIG)
+    hass.states.async_set(SENSOR, "off")
+    hass.states.async_set(LIGHT, "off")
+    await setup_ec(config)
+    assert config == CONFIG
+
+
+@pytest.mark.parametrize("removed", [SENSOR, LIGHT])
+async def test_removed_watched_entity(
+    hass: HomeAssistant, freezer, calls: ServiceCalls, setup_ec: SetupEC, removed
+) -> None:
+    """A watched entity disappearing (e.g. deleted or renamed) is ignored."""
+    await _setup(hass, setup_ec)
+    hass.states.async_set(SENSOR, "on")
+    await hass.async_block_till_done()
+
+    hass.states.async_remove(removed)
+    await hass.async_block_till_done()
+    assert ec_state(hass) == "active_timer"

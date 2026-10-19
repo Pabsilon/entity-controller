@@ -13,6 +13,7 @@ def build_machine() -> HierarchicalMachine:
     machine = HierarchicalMachine(
         states=STATES,
         initial="pending",
+        prepare_event="prepare",
         finalize_event="finalize",
     )
     machine.add_transition(trigger="start_monitoring", source="pending", dest="idle")
@@ -187,6 +188,8 @@ def build_machine() -> HierarchicalMachine:
     )
 
     # Active Stay On
+    # The timer still runs in stay mode; its expiry is ignored.
+    machine.add_transition(trigger="timer_expires", source="active_stay_on", dest=None)
     machine.add_transition(
         trigger="enable",
         source="active_stay_on",
