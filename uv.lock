@@ -956,7 +956,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "transitions", specifier = "==0.8.8" }]
+requires-dist = [{ name = "transitions", specifier = "==0.9.3" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2975,14 +2975,14 @@ wheels = [
 
 [[package]]
 name = "transitions"
-version = "0.8.8"
+version = "0.9.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "six" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ee/ca/8e6eafd9f2d1af7f0bee4af9add66ea633c82519d3d2c40701fa5fb66ad6/transitions-0.8.8.tar.gz", hash = "sha256:e7a86b31a161a76133f189b3ae9dad2755a80ea4c1e0eee1805648d021fb677d", size = 1148802, upload-time = "2021-04-07T09:38:49.365Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4f/83/9e90f3494057d73c9e6bd8de8488af7c9fa714666ccc2db30fe07d147818/transitions-0.9.3.tar.gz", hash = "sha256:881fb75bb1654ed55d86060bb067f2c716f8e155f57bb73fd444e53713aafec8", size = 1191029, upload-time = "2025-07-02T10:49:03.153Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3c/b6/56088011072ac038817b2a4d3e999fb92e07e0878330e13205f0de05ddf8/transitions-0.8.8-py2.py3-none-any.whl", hash = "sha256:f35efa070fbdf9a0f3f093b19f1258068786af75786a8cbcc884444f3d1a66d4", size = 82260, upload-time = "2021-04-07T09:38:46.401Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/05/fea3020e90aa378941ff10de8860fb3b1288313c27efd10fa0c476498f7e/transitions-0.9.3-py2.py3-none-any.whl", hash = "sha256:02463248f2b668d86f66636b1e3c9e8de84d93e22915247f4e1aa9ee1cae28aa", size = 112792, upload-time = "2025-07-02T10:49:01.415Z" },
 ]
 
 [[package]]
