@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Chores
+
+* Updated `transitions` from 0.8.8 to 0.9.3.
+
 <a name="10.1.0b2"></a>
 ## [10.1.0b2](https://github.com/Pabsilon/entity-controller/compare/v10.1.0b1...v10.1.0b2) (2026-10-19)
 
