@@ -157,3 +157,155 @@ async def test_set_night_mode_does_not_change_options(
     )
     assert get_entity(hass, ENTITY_ID).model.night_mode["start_time"] == "21:00:00"
     assert entry.options["night_mode"] == night_mode
+
+
+def _suggested(schema) -> dict[str, dict[str, Any]]:
+    """The values a form shows: what the user submits if they change nothing."""
+    return {
+        name: {
+            key.schema: key.description["suggested_value"]
+            for key in value.schema.schema
+            if key.description and "suggested_value" in key.description
+        }
+        for name, value in schema.schema.items()
+    }
+
+
+async def _options_flow(
+    hass: HomeAssistant, entry: MockConfigEntry, change: Any = None
+) -> Any:
+    """Open the options flow and submit what it shows, after `change(values)`."""
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
+    values = _suggested(result["data_schema"])
+    if change is not None:
+        change(values)
+    return await hass.config_entries.options.async_configure(result["flow_id"], values)
+
+
+FULL_OPTIONS = {
+    "sensors": [SENSOR, "binary_sensor.door"],
+    "entities": [LIGHT],
+    "trigger_on_activate": ["script.on"],
+    "trigger_on_deactivate": ["script.off"],
+    "state_entities": ["light.state"],
+    "overrides": ["input_boolean.override"],
+    "delay": 30,
+    "sensor_type": "duration",
+    "sensor_resets_timer": True,
+    "stay_mode": True,
+    "start_time": "sunset - 00:30:00",
+    "end_time": "23:00:00",
+    "night_mode": {
+        "start_time": "23:00:00",
+        "end_time": "06:00:00",
+        "delay": 10,
+        "service_data": {"brightness": 10},
+    },
+    "block_timeout": 120,
+    "disable_block": True,
+    "backoff": True,
+    "backoff_factor": 1.5,
+    "backoff_max": 600,
+    "service_data": {"brightness": 200},
+    "service_data_off": {"transition": 2},
+    "behaviours": {"on_enter_idle": "ignore"},
+    "control_states_on": ["on", "heat"],
+    "state_strings_off": ["standby"],
+    "state_attributes_ignore": ["brightness"],
+    "ignored_event_sources": ["ec_"],
+}
+
+
+async def test_options_round_trip(hass: HomeAssistant) -> None:
+    entry = _entry(**FULL_OPTIONS)
+    await _add_entry(hass, entry)
+
+    result = await _options_flow(hass, entry)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert dict(entry.options) == FULL_OPTIONS
+
+
+async def test_options_defaults_not_saved(hass: HomeAssistant) -> None:
+    entry = _entry()
+    await _add_entry(hass, entry)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    values = _suggested(result["data_schema"])
+    # The form shows the defaults...
+    assert values["timing"]["sensor_type"] == "event"
+    assert values["behaviours"]["on_enter_idle"] == "off"
+    # ...and booleans are always submitted.
+    values["timing"]["stay_mode"] = False
+    values["blocking"]["backoff"] = False
+    values["night_mode"] = {"start_time": "", "service_data": {}}
+    await hass.config_entries.options.async_configure(result["flow_id"], values)
+    assert dict(entry.options) == OPTIONS
+
+
+async def test_options_merge_legacy_keys(hass: HomeAssistant) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Living Room",
+        unique_id="living_room",
+        options={
+            "sensor": [SENSOR],
+            "sensors": ["binary_sensor.door", SENSOR],
+            "entity": [LIGHT],
+            "override": ["input_boolean.override"],
+            "sensor_type_duration": True,
+            "delay": 5,
+        },
+    )
+    await _add_entry(hass, entry)
+
+    await _options_flow(hass, entry)
+    assert dict(entry.options) == {
+        "sensors": [SENSOR, "binary_sensor.door"],
+        "entities": [LIGHT],
+        "overrides": ["input_boolean.override"],
+        "sensor_type": "duration",
+        "delay": 5,
+    }
+
+
+async def test_options_apply_without_restart(hass: HomeAssistant, freezer) -> None:
+    entry = _entry()
+    await _add_entry(hass, entry)
+    await advance(hass, freezer, 1)
+
+    def change(values: dict[str, dict[str, Any]]) -> None:
+        values["timing"]["delay"] = 60.0  # NumberSelector sends floats
+        values["timing"]["stay_mode"] = True
+
+    await _options_flow(hass, entry, change)
+    await hass.async_block_till_done()
+    assert entry.options["delay"] == 60
+    await advance(hass, freezer, 1)
+    model = get_entity(hass, ENTITY_ID).model
+    assert model.light_params_day["delay"] == 60
+    assert model.stay is True
+
+
+@pytest.mark.parametrize(
+    ("section", "values"),
+    [
+        ("night_mode", {"start_time": "23:00:00"}),
+        ("timing", {"start_time": "18:00", "end_time": "06:00:00"}),
+        ("entities", {"sensors": [SENSOR]}),
+    ],
+)
+async def test_options_invalid(
+    hass: HomeAssistant, section: str, values: dict[str, Any]
+) -> None:
+    entry = _entry()
+    await _add_entry(hass, entry)
+
+    def change(form: dict[str, dict[str, Any]]) -> None:
+        form[section] = values
+
+    result = await _options_flow(hass, entry, change)
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_options"}
+    assert result["description_placeholders"]["error"]
+    assert dict(entry.options) == OPTIONS

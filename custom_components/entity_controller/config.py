@@ -116,7 +116,7 @@ OPTIONS_SCHEMA = vol.Schema(
         vol.Optional(CONF_DISABLE_BLOCK): cv.boolean,
         vol.Optional("stay_mode"): cv.boolean,
         vol.Optional("backoff"): cv.boolean,
-        vol.Optional("backoff_factor"): vol.Any(cv.positive_int, cv.positive_float),
+        vol.Optional("backoff_factor"): cv.positive_float,
         vol.Optional("backoff_max"): cv.positive_int,
         vol.Optional(CONF_START_TIME): time_string,
         vol.Optional(CONF_END_TIME): time_string,

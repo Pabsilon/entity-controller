@@ -90,5 +90,5 @@ class EntityController(Entity):
 
     def set_attr(self, k: str, v: Any) -> None:
         if k == CONF_DELAY:
-            v = f"{v}s"
+            v = f"{v:g}s"
         self._attributes[k] = v
