@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+<a name="10.2.0b1"></a>
+## [10.2.0b1](https://github.com/Pabsilon/entity-controller/compare/v10.1.0...v10.2.0b1) (2026-10-19)
+
+Pre-release for testing. Install it from HACS with **Show beta versions** enabled.
+
+### Features
+
+* Entity Controllers can be created from the UI: **Settings → Devices & services → Helpers → Create helper → Entity Controller**. The form asks for a name, sensors, controlled entities and a delay.
+* Every option of a UI-created EC can be changed from its **Configure** dialog, grouped in sections. Changes apply right away, without restarting Home Assistant.
+* UI-created ECs have a unique ID, so they can be renamed and given an area from the UI.
+
+YAML configuration keeps working unchanged. Importing it into the UI comes in a later release.
+
+### Behaviour Changes
+
+* ECs created or reloaded while Home Assistant is running start right away. The 70-second startup delay only applies while Home Assistant is starting.
+
+### Bug Fixes
+
+* A decimal `backoff_factor`, such as `1.5`, was rounded down to a whole number.
+
 <a name="10.1.0"></a>
 ## [10.1.0](https://github.com/Pabsilon/entity-controller/compare/v10.0.0...v10.1.0) (2026-10-19)
 
