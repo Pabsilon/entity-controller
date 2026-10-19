@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+<a name="10.1.0b3"></a>
+## [10.1.0b3](https://github.com/Pabsilon/entity-controller/compare/v10.1.0b2...v10.1.0b3) (2026-10-19)
+
+Pre-release for testing. Install it from HACS with **Show beta versions** enabled.
+
+### Chores
+
+* Updated `transitions` from 0.8.8 to 0.9.3.
+
 <a name="10.1.0b2"></a>
 ## [10.1.0b2](https://github.com/Pabsilon/entity-controller/compare/v10.1.0b1...v10.1.0b2) (2026-10-19)
 
