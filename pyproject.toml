@@ -1,6 +1,6 @@
 [project]
 name = "entity-controller"
-version = "10.1.0b2"
+version = "10.1.0b3"
 description = "Home Assistant custom integration implementing 'When This, Then That' automations with a finite state machine."
 readme = "README.md"
 license = "GPL-3.0-or-later"
