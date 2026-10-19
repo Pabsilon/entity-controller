@@ -1,0 +1,27 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Create an Entity Controller",
+        "description": "Turns the controlled entities on when a sensor triggers, and off again once the delay has passed. More options are available after creating it.",
+        "data": {
+          "name": "Name",
+          "sensors": "Sensors",
+          "entities": "Controlled entities",
+          "delay": "Delay"
+        },
+        "data_description": {
+          "sensors": "Entities that trigger the controller, such as motion sensors.",
+          "entities": "Entities turned on and off by the controller, such as lights.",
+          "delay": "How long the controlled entities stay on after the sensors stop triggering."
+        }
+      }
+    },
+    "error": {
+      "invalid_name": "The name must contain letters or numbers."
+    },
+    "abort": {
+      "already_configured": "An Entity Controller with this name already exists."
+    }
+  }
+}

@@ -3,6 +3,7 @@
   "name": "Entity Controller",
   "after_dependencies": ["light", "script"],
   "codeowners": ["@Pabsilon"],
+  "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/Pabsilon/entity-controller/blob/master/README.md",
   "integration_type": "helper",

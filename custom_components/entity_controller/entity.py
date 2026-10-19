@@ -41,8 +41,10 @@ class EntityController(Entity):
         hass: HomeAssistant,
         config: dict[str, Any],
         machine: HierarchicalMachine,
+        unique_id: str | None = None,
     ) -> None:
         self._attr_name = config.get("friendly_name", config.get(CONF_NAME))
+        self._attr_unique_id = unique_id
         self._attributes: dict[str, Any] = {}
         self.model = Model(hass, config, machine, self)
 

@@ -21,12 +21,16 @@ Documentation:    https://github.com/Pabsilon/entity-controller
 """
 
 import logging
+from dataclasses import dataclass
 
 import voluptuous as vol
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
+from homeassistant.util.hass_dict import HassKey
+from transitions.extensions import HierarchicalMachine
 
 from .config import validate_entity_controllers
 from .const import DOMAIN
@@ -39,9 +43,22 @@ _LOGGER = logging.getLogger(__name__)
 CONFIG_SCHEMA = vol.Schema({DOMAIN: validate_entity_controllers}, extra=vol.ALLOW_EXTRA)
 
 
+@dataclass
+class EntityControllerData:
+    """Shared by every EC, whether it comes from YAML or a config entry."""
+
+    component: EntityComponent[EntityController]
+    machine: HierarchicalMachine
+
+
+DATA: HassKey[EntityControllerData] = HassKey(DOMAIN)
+
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up an Entity Controller for each configured key."""
+    """Set up the component, and an Entity Controller for each key in YAML."""
     component = EntityComponent[EntityController](_LOGGER, DOMAIN, hass)
+    machine = build_machine()
+    hass.data[DATA] = EntityControllerData(component, machine)
 
     integration = await async_get_integration(hass, DOMAIN)
     _LOGGER.info(
@@ -53,16 +70,30 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     async_setup_entity_services(component)
 
-    machine = build_machine()
-
-    _LOGGER.info("Domain Configuration: %s", config[DOMAIN])
-    devices = [
-        EntityController(hass, {**ec_config, "name": key}, machine)
-        for key, ec_config in config[DOMAIN].items()
-    ]
-
-    await component.async_add_entities(devices)
+    if DOMAIN in config:
+        _LOGGER.info("Domain Configuration: %s", config[DOMAIN])
+        devices = [
+            EntityController(hass, {**ec_config, "name": key}, machine)
+            for key, ec_config in config[DOMAIN].items()
+        ]
+        await component.async_add_entities(devices)
 
     _LOGGER.info("The %s component is ready!", DOMAIN)
 
     return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up an Entity Controller from a config entry."""
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+    return await hass.data[DATA].component.async_setup_entry(entry)
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    return await hass.data[DATA].component.async_unload_entry(entry)
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Apply changed options by reloading the entry."""
+    await hass.config_entries.async_reload(entry.entry_id)
