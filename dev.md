@@ -36,11 +36,9 @@ stays as a reference for porting the tests.
 ## Lint
 
 ```bash
-uv run ruff check tests scripts
-uv run ruff format tests scripts
+uv run ruff check custom_components tests scripts
+uv run ruff format custom_components tests scripts
 ```
-
-The integration code isn't linted yet. It will be once it has been refactored.
 
 ## Validation
 

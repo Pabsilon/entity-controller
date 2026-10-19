@@ -14,11 +14,14 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with Entity Controller.  If not, see <https://www.gnu.org/licenses/>.
 
+Constants used by other files.
 """
-""" Constants used by other files """
 
 DOMAIN = "entity_controller"
 DOMAIN_SHORT = "ec"
+
+# Delay before EC starts monitoring state change events, in seconds
+STARTUP_DELAY = 70
 
 # services
 SERVICE_ACTIVATE = "activate"
@@ -28,37 +31,52 @@ SERVICE_ENABLE_STAY_MODE = "enable_stay_mode"
 SERVICE_DISABLE_STAY_MODE = "disable_stay_mode"
 SERVICE_SET_NIGHT_MODE = "set_night_mode"
 
-#configuration
-CONF_START_TIME = 'start_time'
-CONF_END_TIME = 'end_time'
+# configuration
+CONF_START_TIME = "start_time"
+CONF_END_TIME = "end_time"
 
 # Transition Behaviours
-CONF_BEHAVIOURS = 'behaviours'
+CONF_BEHAVIOURS = "behaviours"
 
-CONF_ON_ENTER_IDLE='on_enter_idle'
-CONF_ON_EXIT_IDLE='on_exit_idle'
-CONF_ON_ENTER_ACTIVE='on_enter_active'
-CONF_ON_EXIT_ACTIVE='on_exit_active'
-CONF_ON_ENTER_OVERRIDDEN = 'on_enter_overridden'
-CONF_ON_EXIT_OVERRIDDEN = 'on_exit_overridden'
-CONF_ON_ENTER_CONSTRAINED = 'on_enter_constrained'
-CONF_ON_EXIT_CONSTRAINED = 'on_exit_constrained'
-CONF_ON_ENTER_BLOCKED = 'on_enter_blocked'
-CONF_ON_EXIT_BLOCKED = 'on_exit_blocked'
+CONF_ON_ENTER_IDLE = "on_enter_idle"
+CONF_ON_EXIT_IDLE = "on_exit_idle"
+CONF_ON_ENTER_ACTIVE = "on_enter_active"
+CONF_ON_EXIT_ACTIVE = "on_exit_active"
+CONF_ON_ENTER_OVERRIDDEN = "on_enter_overridden"
+CONF_ON_EXIT_OVERRIDDEN = "on_exit_overridden"
+CONF_ON_ENTER_CONSTRAINED = "on_enter_constrained"
+CONF_ON_EXIT_CONSTRAINED = "on_exit_constrained"
+CONF_ON_ENTER_BLOCKED = "on_enter_blocked"
+CONF_ON_EXIT_BLOCKED = "on_exit_blocked"
 
-CONF_TRANSITION_BEHAVIOUR_ON = 'on'
-CONF_TRANSITION_BEHAVIOUR_OFF = 'off'
-CONF_TRANSITION_BEHAVIOUR_IGNORE = 'ignore'
+CONF_TRANSITION_BEHAVIOUR_ON = "on"
+CONF_TRANSITION_BEHAVIOUR_OFF = "off"
+CONF_TRANSITION_BEHAVIOUR_IGNORE = "ignore"
+
+DEFAULT_TRANSITION_BEHAVIOURS = {
+    CONF_ON_ENTER_IDLE: CONF_TRANSITION_BEHAVIOUR_OFF,
+    CONF_ON_EXIT_IDLE: CONF_TRANSITION_BEHAVIOUR_IGNORE,
+    CONF_ON_ENTER_ACTIVE: CONF_TRANSITION_BEHAVIOUR_ON,
+    CONF_ON_EXIT_ACTIVE: CONF_TRANSITION_BEHAVIOUR_IGNORE,
+    CONF_ON_ENTER_OVERRIDDEN: CONF_TRANSITION_BEHAVIOUR_IGNORE,
+    CONF_ON_EXIT_OVERRIDDEN: CONF_TRANSITION_BEHAVIOUR_IGNORE,
+    CONF_ON_ENTER_CONSTRAINED: CONF_TRANSITION_BEHAVIOUR_IGNORE,
+    CONF_ON_EXIT_CONSTRAINED: CONF_TRANSITION_BEHAVIOUR_IGNORE,
+    CONF_ON_ENTER_BLOCKED: CONF_TRANSITION_BEHAVIOUR_IGNORE,
+    CONF_ON_EXIT_BLOCKED: CONF_TRANSITION_BEHAVIOUR_IGNORE,
+}
+
 SENSOR_TYPE_DURATION = "duration"
 SENSOR_TYPE_EVENT = "event"
 MODE_DAY = "day"
 MODE_NIGHT = "night"
 
 DEFAULT_DELAY = 180
-DEFAULT_BRIGHTNESS = 100
-DEFAULT_NAME = "Entity Timer"
 
-# CONF_NAME = 'slug'
+# States that count as on/off, unless overridden in the config
+DEFAULT_STATES_ON = ("on", "playing", "home", "True")
+DEFAULT_STATES_OFF = ("off", "idle", "paused", "away", "False")
+
 CONF_CONTROL_ENTITIES = "entities"
 CONF_CONTROL_ENTITY = "entity"
 CONF_TRIGGER_ON_ACTIVATE = "trigger_on_activate"
@@ -77,14 +95,29 @@ CONF_SENSOR_RESETS_TIMER = "sensor_resets_timer"
 CONF_NIGHT_MODE = "night_mode"
 CONF_STATE_ATTRIBUTES_IGNORE = "state_attributes_ignore"
 CONF_IGNORED_EVENT_SOURCES = "ignored_event_sources"
-MODE_DAY = 'day'
-MODE_NIGHT = 'night'
-CONSTRAIN_START = 1
-CONSTRAIN_END = 2
-STATES = ['pending', 'idle', 'overridden', 'constrained', 'blocked',
-          {'name': 'active', 'children': ['timer', 'stay_on'],
-           'initial': False}]
-CONF_IGNORE_STATE_CHANGES_UNTIL = "grace_period"
 
+STATES = [
+    "pending",
+    "idle",
+    "overridden",
+    "constrained",
+    "blocked",
+    {"name": "active", "children": ["timer", "stay_on"], "initial": False},
+]
+
+# State attributes kept when returning to idle; the rest are dropped.
+PERSISTED_STATE_ATTRIBUTES = (
+    "last_triggered_by",
+    "last_triggered_at",
+    CONF_STATE_ENTITIES,
+    "control_entities",
+    "sensor_entities",
+    "override_entities",
+    CONF_DELAY,
+    "sensor_type",
+    "mode",
+    "start_time",
+    "end_time",
+)
 
 CONTEXT_ID_CHARACTER_LIMIT = 26

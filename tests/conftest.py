@@ -9,10 +9,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
-from custom_components.entity_controller.const import DOMAIN
-
-# Matches STARTUP_DELAY in the integration; EC stays `pending` until it elapses.
-STARTUP_DELAY = 70
+from custom_components.entity_controller.const import DOMAIN, STARTUP_DELAY
 
 # Domains whose turn_on/turn_off services are faked. `homeassistant` is used for
 # groups, `script` for trigger_on_activate/trigger_on_deactivate.
