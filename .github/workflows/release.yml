@@ -15,6 +15,15 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.0
       - name: Check versions match the tag
         run: uv run --no-project python scripts/check_version.py "${GITHUB_REF_NAME}"
+      - name: Detect pre-release
+        id: version
+        # PEP 440 pre-release suffixes: v10.1.0a1, v10.1.0b1, v10.1.0rc1
+        run: |
+          if [[ "${GITHUB_REF_NAME}" =~ (a|b|rc)[0-9]+$ ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Build HACS zip
         working-directory: custom_components/entity_controller
         run: zip -r "${GITHUB_WORKSPACE}/entity_controller.zip" . -x "__pycache__/*"
@@ -22,3 +31,4 @@ jobs:
         with:
           files: entity_controller.zip
           generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.prerelease }}
