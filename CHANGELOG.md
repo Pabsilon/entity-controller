@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+<a name="10.1.0b1"></a>
+## [10.1.0b1](https://github.com/Pabsilon/entity-controller/compare/v10.0.0...v10.1.0b1) (2026-10-19)
+
+Pre-release for testing. Install it from HACS with **Show beta versions** enabled.
+
+### Behaviour Changes
+
+* The state no longer passes through `active` on its way to `active_timer` or `active_stay_on`. Automations triggering on `to: active` will no longer fire.
+* Timestamp attributes (`expires_at`, `blocked_at`, `last_triggered_at`, ...) now include the time zone.
+
+### Bug Fixes
+
+* Stay mode no longer logs a `MachineError` when the timer expires.
+* `on_enter_constrained` and `on_exit_constrained` behaviours ran twice when the `start_time`/`end_time` window closed or opened.
+* `sunrise`/`sunset` times were computed for the previous day in time zones west of UTC.
+* Constraint windows no longer depend on the system time zone matching Home Assistant's, and the "Timezones do not Match" startup error is gone.
+* Timers and state listeners are cancelled when Home Assistant stops or the entity is removed.
+* A watched entity being removed or renamed no longer causes errors.
+* `state_strings_on`/`state_strings_off` no longer modify the configured state lists, and EC no longer writes into your YAML configuration.
+
+### Chores
+
+* `__init__.py` split into modules, with type hints, and linted with ruff.
+* Releases with an `a`/`b`/`rc` version are published as pre-releases.
+
 <a name="10.0.0"></a>
 ## [10.0.0](https://github.com/Pabsilon/entity-controller/compare/235b4ab...v10.0.0) (2026-10-18)
 
