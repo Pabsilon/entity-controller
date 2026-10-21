@@ -199,7 +199,8 @@ async def test_removing_the_entity_stops_its_timers(
     hass.states.async_set(SENSOR, "off")
     hass.states.async_set(SENSOR, "on")
     await advance(hass, freezer, DELAY + 1)
-    assert hass.states.get(ENTITY_ID) is None
+    # A registered entity leaves an unavailable state behind
+    assert ec_state(hass) == "unavailable"
     assert calls.turned_off() == []
 
 

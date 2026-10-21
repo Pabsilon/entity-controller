@@ -13,6 +13,7 @@ from typing import Any, NamedTuple
 
 import voluptuous as vol
 from homeassistant.config_entries import (
+    SOURCE_IMPORT,
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
@@ -57,6 +58,8 @@ from .const import (
     SENSOR_TYPE_EVENT,
 )
 
+CONF_FRIENDLY_NAME = "friendly_name"
+CONF_OBJECT_ID = "object_id"
 CONF_OVERRIDE = "override"
 CONF_OVERRIDES = "overrides"
 
@@ -320,6 +323,31 @@ class EntityControllerConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=self.add_suggested_values_to_schema(USER_SCHEMA, suggested),
             errors=errors,
             description_placeholders=placeholders,
+        )
+
+    async def async_step_import(self, import_data: dict[str, Any]) -> ConfigFlowResult:
+        """Import an EC from YAML, once: later changes to the YAML are ignored.
+
+        `import_data` is the EC's validated YAML config, with its key as the name.
+        The entry records the object id the YAML entity had, so the imported EC
+        keeps its entity_id.
+        """
+        config = dict(import_data)
+        key = config.pop(CONF_NAME)
+        existing = await self.async_set_unique_id(key)
+        if existing is not None:
+            if existing.source == SOURCE_IMPORT:
+                return self.async_abort(reason="already_configured")
+            # An EC created in the UI with the same name
+            return self.async_abort(reason="yaml_conflict")
+
+        name = config.get(CONF_FRIENDLY_NAME) or key
+        # The round trip through the form leaves out unknown keys, the friendly
+        # name (the title) and defaults, the same as saving the options form.
+        return self.async_create_entry(
+            title=name,
+            data={CONF_OBJECT_ID: slugify(name)},
+            options=form_to_options(options_to_form(config)),
         )
 
 

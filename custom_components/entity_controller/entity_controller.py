@@ -10,6 +10,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import DATA
+from .config_flow import CONF_OBJECT_ID
+from .const import DOMAIN
 from .entity import EntityController
 
 
@@ -24,6 +26,9 @@ async def async_setup_entry(
         CONF_NAME: entry.unique_id,
         "friendly_name": entry.title,
     }
-    async_add_entities(
-        [EntityController(hass, config, hass.data[DATA].machine, entry.entry_id)]
-    )
+    entity = EntityController(hass, config, hass.data[DATA].machine, entry.entry_id)
+    if object_id := entry.data.get(CONF_OBJECT_ID):
+        # Imported from YAML: keep the entity_id it had. Only used the first time
+        # the entity is registered, after that the registry decides.
+        entity.entity_id = f"{DOMAIN}.{object_id}"
+    async_add_entities([entity])

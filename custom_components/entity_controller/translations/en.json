@@ -138,7 +138,8 @@
       "invalid_options": "Invalid options: {error}"
     },
     "abort": {
-      "already_configured": "An Entity Controller with this name already exists."
+      "already_configured": "An Entity Controller with this name already exists.",
+      "yaml_conflict": "An Entity Controller created in the UI already uses the name of this YAML Entity Controller."
     }
   },
   "options": {
@@ -289,6 +290,16 @@
         "off": "Turn off",
         "ignore": "Do nothing"
       }
+    }
+  },
+  "issues": {
+    "deprecated_yaml": {
+      "title": "Entity Controller YAML configuration is deprecated",
+      "description": "Your Entity Controllers have been imported from `configuration.yaml`, keeping their entity IDs. They are now set up in Settings > Devices & services > Entity Controller, where each one can be changed with Configure.\n\nThe import only happens once: later changes to the YAML are ignored. Remove the `entity_controller:` section from `configuration.yaml` and restart Home Assistant to fix this issue. While the section is there, an imported Entity Controller that you delete is imported again on the next restart."
+    },
+    "yaml_conflict": {
+      "title": "Entity Controller `{key}` was not imported",
+      "description": "The Entity Controller `{key}` in `configuration.yaml` was not imported, because the Entity Controller \"{title}\", created in the UI, already uses that name. It is not running.\n\nRename the `{key}` key in YAML and restart to import it, or remove it from YAML if \"{title}\" replaces it."
     }
   }
 }
