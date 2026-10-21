@@ -3,34 +3,12 @@
     "step": {
       "user": {
         "title": "Create an Entity Controller",
-        "description": "Turns the controlled entities on when a sensor triggers, and off again once the delay has passed. More options are available after creating it.",
+        "description": "Turns the controlled entities on when a sensor triggers, and off again once the delay has passed. A name, sensors and controlled entities are enough to start. Empty fields use their defaults, and everything can be changed later with Configure.",
         "data": {
-          "name": "Name",
-          "sensors": "Sensors",
-          "entities": "Controlled entities",
-          "delay": "Delay"
+          "name": "Name"
         },
-        "data_description": {
-          "sensors": "Entities that trigger the controller, such as motion sensors.",
-          "entities": "Entities turned on and off by the controller, such as lights.",
-          "delay": "How long the controlled entities stay on after the sensors stop triggering."
-        }
-      }
-    },
-    "error": {
-      "invalid_name": "The name must contain letters or numbers."
-    },
-    "abort": {
-      "already_configured": "An Entity Controller with this name already exists."
-    }
-  },
-  "options": {
-    "step": {
-      "init": {
-        "title": "Entity Controller options",
-        "description": "Empty fields use their defaults. Saving applies the changes right away, without restarting Home Assistant.",
         "sections": {
-          "entities": {
+          "entity_settings": {
             "name": "Entities",
             "data": {
               "sensors": "Sensors",
@@ -72,18 +50,18 @@
             "name": "Night mode",
             "description": "Different delay and service data between two times. Set both times to enable it.",
             "data": {
-              "start_time": "Start",
-              "end_time": "End",
-              "delay": "Delay",
-              "service_data": "Turn on data",
-              "service_data_off": "Turn off data"
+              "night_start_time": "Start",
+              "night_end_time": "End",
+              "night_delay": "Delay",
+              "night_service_data": "Turn on data",
+              "night_service_data_off": "Turn off data"
             },
             "data_description": {
-              "start_time": "HH:MM:SS, or sunrise/sunset with an optional offset, such as `sunset - 00:30:00`.",
-              "end_time": "HH:MM:SS, or sunrise/sunset with an optional offset, such as `sunset - 00:30:00`.",
-              "delay": "Leave empty to use the main delay.",
-              "service_data": "Leave empty to use the main turn on data.",
-              "service_data_off": "Leave empty to use the main turn off data."
+              "night_start_time": "HH:MM:SS, or sunrise/sunset with an optional offset, such as `sunset - 00:30:00`.",
+              "night_end_time": "HH:MM:SS, or sunrise/sunset with an optional offset, such as `sunset - 00:30:00`.",
+              "night_delay": "Leave empty to use the main delay.",
+              "night_service_data": "Leave empty to use the main turn on data.",
+              "night_service_data_off": "Leave empty to use the main turn off data."
             }
           },
           "blocking": {
@@ -103,7 +81,146 @@
               "backoff_max": "Defaults to 300 seconds."
             }
           },
-          "service_data": {
+          "service_data_settings": {
+            "name": "Service data",
+            "data": {
+              "service_data": "Turn on data",
+              "service_data_off": "Turn off data"
+            },
+            "data_description": {
+              "service_data": "Sent with turn_on, such as `brightness: 128`.",
+              "service_data_off": "Sent with turn_off."
+            }
+          },
+          "behaviours": {
+            "name": "Transition behaviours",
+            "description": "What happens to the controlled entities when the controller enters or leaves a state.",
+            "data": {
+              "on_enter_idle": "Entering idle",
+              "on_exit_idle": "Leaving idle",
+              "on_enter_active": "Entering active",
+              "on_exit_active": "Leaving active",
+              "on_enter_overridden": "Entering overridden",
+              "on_exit_overridden": "Leaving overridden",
+              "on_enter_constrained": "Entering constrained",
+              "on_exit_constrained": "Leaving constrained",
+              "on_enter_blocked": "Entering blocked",
+              "on_exit_blocked": "Leaving blocked"
+            }
+          },
+          "advanced": {
+            "name": "Advanced",
+            "description": "Leave the state lists empty to use the defaults: on is `on`, `playing`, `home`, `True`; off is `off`, `idle`, `paused`, `away`, `False`.",
+            "data": {
+              "control_states_on": "Control on states",
+              "control_states_off": "Control off states",
+              "sensor_states_on": "Sensor on states",
+              "sensor_states_off": "Sensor off states",
+              "override_states_on": "Override on states",
+              "override_states_off": "Override off states",
+              "state_states_on": "State on states",
+              "state_states_off": "State off states",
+              "state_strings_on": "Extra on states (all entities)",
+              "state_strings_off": "Extra off states (all entities)",
+              "state_attributes_ignore": "Ignored attributes",
+              "ignored_event_sources": "Ignored event sources"
+            },
+            "data_description": {
+              "state_attributes_ignore": "Changes to only these attributes of the state entities are ignored.",
+              "ignored_event_sources": "Regular expressions matched against the context ID of a state change. Matching changes are ignored."
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "invalid_name": "The name must contain letters or numbers.",
+      "invalid_options": "Invalid options: {error}"
+    },
+    "abort": {
+      "already_configured": "An Entity Controller with this name already exists."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Entity Controller options",
+        "description": "Empty fields use their defaults. Saving applies the changes right away, without restarting Home Assistant.",
+        "sections": {
+          "entity_settings": {
+            "name": "Entities",
+            "data": {
+              "sensors": "Sensors",
+              "entities": "Controlled entities",
+              "trigger_on_activate": "Trigger on activate",
+              "trigger_on_deactivate": "Trigger on deactivate",
+              "state_entities": "State entities",
+              "overrides": "Overrides"
+            },
+            "data_description": {
+              "sensors": "Entities that trigger the controller, such as motion sensors.",
+              "entities": "Entities turned on and off by the controller, such as lights.",
+              "trigger_on_activate": "Turned on when the controller activates, but not turned off again, such as scripts or scenes.",
+              "trigger_on_deactivate": "Turned on when the controller deactivates.",
+              "state_entities": "Entities whose state the controller watches instead of the controlled entities. Leave empty to use the controlled entities.",
+              "overrides": "While any of these is on, the controller does nothing."
+            }
+          },
+          "timing": {
+            "name": "Timing",
+            "data": {
+              "delay": "Delay",
+              "sensor_type": "Sensor type",
+              "sensor_resets_timer": "Sensor resets the timer",
+              "stay_mode": "Stay mode",
+              "start_time": "Active from",
+              "end_time": "Active until"
+            },
+            "data_description": {
+              "delay": "How long the controlled entities stay on after the sensors stop triggering.",
+              "sensor_type": "Event sensors start the delay when they trigger. Duration sensors also keep the entities on for as long as they stay on.",
+              "sensor_resets_timer": "With a duration sensor, start the delay again when the sensor turns off.",
+              "stay_mode": "Once activated, keep the entities on until they are turned off by something else.",
+              "start_time": "The controller only reacts between these two times. HH:MM:SS, or sunrise/sunset with an optional offset, such as `sunset - 00:30:00`.",
+              "end_time": "HH:MM:SS, or sunrise/sunset with an optional offset, such as `sunset - 00:30:00`."
+            }
+          },
+          "night_mode": {
+            "name": "Night mode",
+            "description": "Different delay and service data between two times. Set both times to enable it.",
+            "data": {
+              "night_start_time": "Start",
+              "night_end_time": "End",
+              "night_delay": "Delay",
+              "night_service_data": "Turn on data",
+              "night_service_data_off": "Turn off data"
+            },
+            "data_description": {
+              "night_start_time": "HH:MM:SS, or sunrise/sunset with an optional offset, such as `sunset - 00:30:00`.",
+              "night_end_time": "HH:MM:SS, or sunrise/sunset with an optional offset, such as `sunset - 00:30:00`.",
+              "night_delay": "Leave empty to use the main delay.",
+              "night_service_data": "Leave empty to use the main turn on data.",
+              "night_service_data_off": "Leave empty to use the main turn off data."
+            }
+          },
+          "blocking": {
+            "name": "Blocking and backoff",
+            "data": {
+              "block_timeout": "Block timeout",
+              "disable_block": "Disable blocking",
+              "backoff": "Backoff",
+              "backoff_factor": "Backoff factor",
+              "backoff_max": "Maximum backoff delay"
+            },
+            "data_description": {
+              "block_timeout": "The controller blocks when the entities are already on, or turned on by something else, while it is active. It then leaves them alone. After this time it takes over again. Leave empty to stay blocked until they are turned off.",
+              "disable_block": "Never block. Turning the entities on by hand while active restarts the delay instead.",
+              "backoff": "Each new trigger while active multiplies the delay by the backoff factor.",
+              "backoff_factor": "Defaults to 1.1.",
+              "backoff_max": "Defaults to 300 seconds."
+            }
+          },
+          "service_data_settings": {
             "name": "Service data",
             "data": {
               "service_data": "Turn on data",

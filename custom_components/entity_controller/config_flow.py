@@ -3,12 +3,13 @@
 Each EC is a config entry. Its options hold the EC's config in the same shape as
 YAML, so `ENTITY_SCHEMA` validates both and the model reads both the same way.
 
-The options flow shows every option in sections. Options left empty, or set to
-their default, are not saved, so the model's own fallbacks stay the only source of
-defaults (a night mode without a delay uses the main delay, for example).
+Both the create and the options form show every option, in sections. Options left
+empty, or set to their default, are not saved, so the model's own fallbacks stay the
+only source of defaults (a night mode without a delay uses the main delay, for
+example).
 """
 
-from typing import Any
+from typing import Any, NamedTuple
 
 import voluptuous as vol
 from homeassistant.config_entries import (
@@ -96,20 +97,25 @@ BEHAVIOUR = selector.SelectSelector(
     )
 )
 
-USER_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_NAME): selector.TextSelector(),
-        vol.Required(CONF_SENSORS): ENTITIES,
-        vol.Required(CONF_CONTROL_ENTITIES): ENTITIES,
-        vol.Required(CONF_DELAY, default=DEFAULT_DELAY): SECONDS,
-    }
-)
 
-# The options form: each section's fields, and where they live in the options.
-# `None` is the top level; otherwise the name of the nested dict.
-SECTIONS: dict[str, tuple[str | None, dict[str, selector.Selector]]] = {
-    "entities": (
+class Section(NamedTuple):
+    """A section of the options form.
+
+    `parent` is where its fields live in the options: `None` for the top level,
+    otherwise the name of a nested dict. `fields` is keyed by the option's name;
+    in the form each key gets `prefix`, so no two fields share a name. API clients
+    such as MCP servers flatten the sections, and would mix them up otherwise.
+    """
+
+    parent: str | None
+    prefix: str
+    fields: dict[str, selector.Selector]
+
+
+SECTIONS: dict[str, Section] = {
+    "entity_settings": Section(
         None,
+        "",
         {
             CONF_SENSORS: ENTITIES,
             CONF_CONTROL_ENTITIES: ENTITIES,
@@ -119,8 +125,9 @@ SECTIONS: dict[str, tuple[str | None, dict[str, selector.Selector]]] = {
             CONF_OVERRIDES: ENTITIES,
         },
     ),
-    "timing": (
+    "timing": Section(
         None,
+        "",
         {
             CONF_DELAY: SECONDS,
             CONF_SENSOR_TYPE: selector.SelectSelector(
@@ -135,8 +142,9 @@ SECTIONS: dict[str, tuple[str | None, dict[str, selector.Selector]]] = {
             CONF_END_TIME: TIME,
         },
     ),
-    "night_mode": (
+    "night_mode": Section(
         CONF_NIGHT_MODE,
+        "night_",
         {
             CONF_START_TIME: TIME,
             CONF_END_TIME: TIME,
@@ -145,8 +153,9 @@ SECTIONS: dict[str, tuple[str | None, dict[str, selector.Selector]]] = {
             CONF_SERVICE_DATA_OFF: OBJECT,
         },
     ),
-    "blocking": (
+    "blocking": Section(
         None,
+        "",
         {
             CONF_BLOCK_TIMEOUT: SECONDS,
             CONF_DISABLE_BLOCK: BOOLEAN,
@@ -159,16 +168,19 @@ SECTIONS: dict[str, tuple[str | None, dict[str, selector.Selector]]] = {
             "backoff_max": SECONDS,
         },
     ),
-    "service_data": (
+    "service_data_settings": Section(
         None,
+        "",
         {CONF_SERVICE_DATA: OBJECT, CONF_SERVICE_DATA_OFF: OBJECT},
     ),
-    "behaviours": (
+    "behaviours": Section(
         CONF_BEHAVIOURS,
+        "",
         dict.fromkeys(DEFAULT_TRANSITION_BEHAVIOURS, BEHAVIOUR),
     ),
-    "advanced": (
+    "advanced": Section(
         None,
+        "",
         {
             **dict.fromkeys(STATE_LIST_KEYS, STRINGS),
             CONF_STATE_ATTRIBUTES_IGNORE: STRINGS,
@@ -177,16 +189,27 @@ SECTIONS: dict[str, tuple[str | None, dict[str, selector.Selector]]] = {
     ),
 }
 
-EXPANDED_SECTIONS = ("entities", "timing")
+EXPANDED_SECTIONS = ("entity_settings", "timing")
 
 OPTIONS_SCHEMA = vol.Schema(
     {
         vol.Required(name): section(
-            vol.Schema({vol.Optional(key): field for key, field in fields.items()}),
+            vol.Schema(
+                {
+                    vol.Optional(f"{sec.prefix}{key}"): field
+                    for key, field in sec.fields.items()
+                }
+            ),
             {"collapsed": name not in EXPANDED_SECTIONS},
         )
-        for name, (_, fields) in SECTIONS.items()
+        for name, sec in SECTIONS.items()
     }
+)
+
+
+# The create form: a name, then the same sections as the options form
+USER_SCHEMA = vol.Schema(
+    {vol.Required(CONF_NAME): selector.TextSelector(), **OPTIONS_SCHEMA.schema}
 )
 
 
@@ -210,9 +233,11 @@ def options_to_form(options: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Split the options into the form's sections, showing defaults where useful."""
     options = normalize(options)
     form: dict[str, dict[str, Any]] = {}
-    for name, (parent, fields) in SECTIONS.items():
-        source = options if parent is None else options.get(parent, {})
-        form[name] = {key: source[key] for key in fields if key in source}
+    for name, sec in SECTIONS.items():
+        source = options if sec.parent is None else options.get(sec.parent, {})
+        form[name] = {
+            f"{sec.prefix}{key}": source[key] for key in sec.fields if key in source
+        }
     form["timing"].setdefault(CONF_SENSOR_TYPE, SENSOR_TYPE_EVENT)
     form["behaviours"] = {**DEFAULT_TRANSITION_BEHAVIOURS, **form["behaviours"]}
     return form
@@ -227,18 +252,34 @@ def _is_set(key: str, value: Any, defaults: dict[str, Any]) -> bool:
 def form_to_options(user_input: dict[str, dict[str, Any]]) -> dict[str, Any]:
     """Merge the form's sections into options, leaving out empty and default values."""
     options: dict[str, Any] = {}
-    for name, (parent, fields) in SECTIONS.items():
-        defaults = DEFAULT_TRANSITION_BEHAVIOURS if parent == CONF_BEHAVIOURS else {}
+    for name, sec in SECTIONS.items():
+        defaults = {
+            **DEFAULTS,
+            **(DEFAULT_TRANSITION_BEHAVIOURS if sec.parent == CONF_BEHAVIOURS else {}),
+        }
+        section_input = user_input.get(name, {})
         values = {
             key: value
-            for key, value in user_input.get(name, {}).items()
-            if key in fields and _is_set(key, value, {**DEFAULTS, **defaults})
+            for key in sec.fields
+            if _is_set(key, value := section_input.get(f"{sec.prefix}{key}"), defaults)
         }
-        if parent is None:
+        if sec.parent is None:
             options.update(values)
         elif values:
-            options[parent] = values
+            options[sec.parent] = values
     return options
+
+
+def validate_form(
+    user_input: dict[str, Any], errors: dict[str, str], placeholders: dict[str, str]
+) -> dict[str, Any] | None:
+    """Turn the form's sections into validated options, or add an error."""
+    try:
+        return ENTITY_SCHEMA(form_to_options(user_input))
+    except vol.Invalid as err:
+        errors["base"] = "invalid_options"
+        placeholders["error"] = str(err)
+        return None
 
 
 class EntityControllerConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -255,22 +296,28 @@ class EntityControllerConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
+        placeholders = {"error": ""}
         if user_input is not None:
-            name = user_input.pop(CONF_NAME).strip()
+            name = user_input[CONF_NAME].strip()
             slug = slugify(name)
             if not slug or slug == "unknown":
                 errors[CONF_NAME] = "invalid_name"
-            else:
+            options = validate_form(user_input, errors, placeholders)
+            if options is not None and not errors:
                 await self.async_set_unique_id(slug)
                 self._abort_if_unique_id_configured()
-                return self.async_create_entry(
-                    title=name, data={}, options=ENTITY_SCHEMA(user_input)
-                )
+                return self.async_create_entry(title=name, data={}, options=options)
 
+        suggested = (
+            user_input
+            if user_input is not None
+            else options_to_form({CONF_DELAY: DEFAULT_DELAY})
+        )
         return self.async_show_form(
             step_id="user",
-            data_schema=self.add_suggested_values_to_schema(USER_SCHEMA, user_input),
+            data_schema=self.add_suggested_values_to_schema(USER_SCHEMA, suggested),
             errors=errors,
+            description_placeholders=placeholders,
         )
 
 
@@ -287,12 +334,8 @@ class EntityControllerOptionsFlow(OptionsFlow):
         errors: dict[str, str] = {}
         placeholders = {"error": ""}
         if user_input is not None:
-            try:
-                options = ENTITY_SCHEMA(form_to_options(user_input))
-            except vol.Invalid as err:
-                errors["base"] = "invalid_options"
-                placeholders["error"] = str(err)
-            else:
+            options = validate_form(user_input, errors, placeholders)
+            if options is not None:
                 return self.async_create_entry(data=options)
 
         suggested = (

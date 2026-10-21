@@ -1,15 +1,18 @@
 """Entity Controllers set up from config entries (the UI)."""
 
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
 from homeassistant.config_entries import SOURCE_USER, ConfigEntryState
 from homeassistant.core import CoreState, HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.data_entry_flow import FlowResultType, section
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.entity_controller import DATA
+from custom_components.entity_controller.config_flow import OPTIONS_SCHEMA
 from custom_components.entity_controller.const import DOMAIN
 
 from .conftest import STARTUP_DELAY, ServiceCalls, advance, ec_state, get_entity
@@ -42,22 +45,32 @@ async def _add_entry(hass: HomeAssistant, entry: MockConfigEntry) -> None:
     await hass.async_block_till_done()
 
 
+async def _user_flow(
+    hass: HomeAssistant, name: str = "Living Room", change: Any = None
+) -> Any:
+    """Fill in the create form with `OPTIONS`, after `change(values)`, and submit it."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    assert result["type"] is FlowResultType.FORM
+    values: dict[str, Any] = {"name": name, **_suggested(result["data_schema"])}
+    values["entity_settings"] = {"sensors": [SENSOR], "entities": [LIGHT]}
+    values["timing"]["delay"] = 5.0  # NumberSelector sends floats
+    if change is not None:
+        change(values)
+    return await hass.config_entries.flow.async_configure(result["flow_id"], values)
+
+
 async def test_user_flow_creates_entry(
     hass: HomeAssistant, freezer, calls: ServiceCalls
 ) -> None:
     hass.states.async_set(SENSOR, "off")
     hass.states.async_set(LIGHT, "off")
 
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
-    )
-    assert result["type"] is FlowResultType.FORM
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {"name": "Living Room", "sensors": [SENSOR], "entities": [LIGHT], "delay": 5},
-    )
+    result = await _user_flow(hass)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Living Room"
+    # The defaults the form shows (sensor type, behaviours) are not saved.
     assert result["options"] == OPTIONS
     entry = result["result"]
     assert entry.unique_id == "living_room"
@@ -77,27 +90,73 @@ async def test_user_flow_creates_entry(
     assert len(calls.turned_on(LIGHT)) == 1
 
 
-async def test_user_flow_duplicate_name_aborts(hass: HomeAssistant) -> None:
-    await _add_entry(hass, _entry())
+async def test_user_flow_shows_defaults(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
     )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {"name": "living room", "sensors": [SENSOR], "entities": [LIGHT], "delay": 5},
-    )
+    values = _suggested(result["data_schema"])
+    assert values["timing"] == {"delay": 180, "sensor_type": "event"}
+    assert values["behaviours"]["on_enter_idle"] == "off"
+
+
+async def test_user_flow_all_options_at_once(hass: HomeAssistant) -> None:
+    def change(values: dict[str, Any]) -> None:
+        values["night_mode"] = {
+            "night_start_time": "23:00:00",
+            "night_end_time": "06:00:00",
+            "night_delay": 2.0,
+        }
+        values["behaviours"]["on_enter_idle"] = "ignore"
+
+    result = await _user_flow(hass, change=change)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["options"] == {
+        **OPTIONS,
+        "night_mode": {"start_time": "23:00:00", "end_time": "06:00:00", "delay": 2},
+        "behaviours": {"on_enter_idle": "ignore"},
+    }
+
+
+async def test_user_flow_trigger_scripts_only(hass: HomeAssistant) -> None:
+    """Controlling only scripts, with no controlled entities, is allowed."""
+
+    def change(values: dict[str, Any]) -> None:
+        values["entity_settings"] = {
+            "sensors": [SENSOR],
+            "trigger_on_activate": ["script.on"],
+            "trigger_on_deactivate": ["script.off"],
+        }
+
+    result = await _user_flow(hass, change=change)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["options"] == {
+        "sensors": [SENSOR],
+        "trigger_on_activate": ["script.on"],
+        "trigger_on_deactivate": ["script.off"],
+        "delay": 5,
+    }
+
+
+async def test_user_flow_nothing_to_control(hass: HomeAssistant) -> None:
+    def change(values: dict[str, Any]) -> None:
+        values["entity_settings"] = {"sensors": [SENSOR]}
+
+    result = await _user_flow(hass, change=change)
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_options"}
+    assert result["description_placeholders"]["error"]
+    assert hass.config_entries.async_entries(DOMAIN) == []
+
+
+async def test_user_flow_duplicate_name_aborts(hass: HomeAssistant) -> None:
+    await _add_entry(hass, _entry())
+    result = await _user_flow(hass, "living room")
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
 
 
 async def test_user_flow_invalid_name(hass: HomeAssistant) -> None:
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {"name": " !! ", "sensors": [SENSOR], "entities": [LIGHT], "delay": 5},
-    )
+    result = await _user_flow(hass, " !! ")
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"name": "invalid_name"}
 
@@ -160,7 +219,7 @@ async def test_set_night_mode_does_not_change_options(
 
 
 def _suggested(schema) -> dict[str, dict[str, Any]]:
-    """The values a form shows: what the user submits if they change nothing."""
+    """The values a form's sections show: what is submitted if nothing changes."""
     return {
         name: {
             key.schema: key.description["suggested_value"]
@@ -168,6 +227,7 @@ def _suggested(schema) -> dict[str, dict[str, Any]]:
             if key.description and "suggested_value" in key.description
         }
         for name, value in schema.schema.items()
+        if isinstance(value, section)
     }
 
 
@@ -238,7 +298,7 @@ async def test_options_defaults_not_saved(hass: HomeAssistant) -> None:
     # ...and booleans are always submitted.
     values["timing"]["stay_mode"] = False
     values["blocking"]["backoff"] = False
-    values["night_mode"] = {"start_time": "", "service_data": {}}
+    values["night_mode"] = {"night_start_time": "", "night_service_data": {}}
     await hass.config_entries.options.async_configure(result["flow_id"], values)
     assert dict(entry.options) == OPTIONS
 
@@ -290,9 +350,9 @@ async def test_options_apply_without_restart(hass: HomeAssistant, freezer) -> No
 @pytest.mark.parametrize(
     ("section", "values"),
     [
-        ("night_mode", {"start_time": "23:00:00"}),
+        ("night_mode", {"night_start_time": "23:00:00"}),
         ("timing", {"start_time": "18:00", "end_time": "06:00:00"}),
-        ("entities", {"sensors": [SENSOR]}),
+        ("entity_settings", {"sensors": [SENSOR]}),
     ],
 )
 async def test_options_invalid(
@@ -309,3 +369,44 @@ async def test_options_invalid(
     assert result["errors"] == {"base": "invalid_options"}
     assert result["description_placeholders"]["error"]
     assert dict(entry.options) == OPTIONS
+
+
+def test_options_form_keys_are_unique() -> None:
+    """API clients flatten the sections, so no two fields may share a name.
+
+    A field may not be named after a section, or after the create form's `name`.
+    """
+    sections = OPTIONS_SCHEMA.schema
+    names = ["name", *(str(name) for name in sections)]
+    for value in sections.values():
+        names += [str(key) for key in value.schema.schema]
+    assert len(names) == len(set(names)), sorted(names)
+
+
+def test_options_form_fields_have_labels() -> None:
+    translations = json.loads(
+        (
+            Path(__file__).parents[1]
+            / "custom_components/entity_controller/translations/en.json"
+        ).read_text()
+    )
+    labels = translations["options"]["step"]["init"]["sections"]
+    for name, value in OPTIONS_SCHEMA.schema.items():
+        assert labels[str(name)]["name"]
+        assert set(labels[str(name)]["data"]) == {
+            str(key) for key in value.schema.schema
+        }
+
+
+def test_create_and_options_forms_share_labels() -> None:
+    """The create step repeats the options step's sections in en.json."""
+    translations = json.loads(
+        (
+            Path(__file__).parents[1]
+            / "custom_components/entity_controller/translations/en.json"
+        ).read_text()
+    )
+    assert (
+        translations["config"]["step"]["user"]["sections"]
+        == translations["options"]["step"]["init"]["sections"]
+    )
