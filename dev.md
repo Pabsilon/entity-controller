@@ -73,6 +73,36 @@ Use a [PEP 440](https://peps.python.org/pep-0440/) pre-release version, such as 
 offers them to users who enable **Show beta versions** for the repository, so everyone else stays
 on the latest stable release.
 
+## Config entries
+
+Each Entity Controller is a config entry. `config_flow.py` has the create, options and import
+flows, and `entity_controller.py` is the platform that `EntityComponent.async_setup_entry` loads
+for our own entries.
+
+- **The options are in the YAML shape.** `entry.options` hold what `ENTITY_SCHEMA` (`config.py`)
+  accepts, so one schema and one model serve both. `entry.unique_id` is the slug of the name. The
+  title is the display name.
+- **The forms are built from `SECTIONS`.** Each form key is unique across sections (night-mode
+  fields are prefixed with `night_`), because API clients such as MCP servers flatten the
+  sections. Sections are optional, since API clients only send the ones with values. Empty and
+  default values aren't saved, which keeps the model's `.get()` fallbacks as the only defaults.
+- **YAML is import-only.** `async_setup` starts one import flow per YAML key and raises the
+  `deprecated_yaml` issue. The import uses the key as the `unique_id` and saves the options
+  through `form_to_options(options_to_form(...))`, so they match what the options form would
+  save.
+- **Entity IDs are kept.** A YAML EC had no unique_id, so HA generated its entity_id from the
+  name (`friendly_name`, or the key). The import saves that object id in
+  `entry.data["object_id"]`, and the platform sets `entity.entity_id` from it. HA uses it only
+  when it first registers the entity. After that, the registry decides.
+- **UI and YAML share one ID namespace.** A UI entry whose `unique_id` equals a YAML key makes
+  the import abort with `yaml_conflict`, and the `yaml_conflict_<key>` issue is raised. An
+  existing entry with `source == import` means the EC was already imported, so a restart does
+  nothing.
+- **Tests:** `setup_ec` configures YAML, so the whole suite runs through the import.
+  `tests/test_import.py` covers the import itself, and `tests/test_config_flow.py` covers the
+  forms. An EC set up while HA is running skips the startup delay. `setup_at_boot` simulates a
+  boot, so the tests still go through the delay.
+
 ## Known issues
 
 Bugs that are known and harmless, deliberately left alone for now.

@@ -6,6 +6,7 @@ callbacks they refer to by name.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import logging
 import re
@@ -17,6 +18,7 @@ from homeassistant.const import CONF_NAME
 from homeassistant.core import (
     CALLBACK_TYPE,
     Context,
+    CoreState,
     Event,
     EventStateChangedData,
     HomeAssistant,
@@ -101,7 +103,9 @@ class Model:
     ) -> None:
         self.hass = hass
         self.entity = entity  # the entity containing this model
-        self.config = dict(config)
+        self.machine = machine
+        # A deep copy, because services such as set_night_mode change the config.
+        self.config = copy.deepcopy(config)
         self.name = config.get(CONF_NAME, "Unnamed Entity Controller")
         # Named after the package rather than this module, so logger config such as
         # `custom_components.entity_controller.<name>: debug` keeps working.
@@ -160,8 +164,11 @@ class Model:
         # Added here because machine-generated methods are used by the methods below.
         machine.add_model(self)
 
+        # The startup delay gives other integrations time to set up their entities,
+        # so it only applies while HA is starting, not to an EC added or reloaded later.
+        delay = 0 if hass.state is CoreState.running else STARTUP_DELAY
         self._unsubs.append(
-            async_call_later(self.hass, STARTUP_DELAY, self.startup_delay_callback)
+            async_call_later(self.hass, delay, self.startup_delay_callback)
         )
 
     @callback
@@ -180,6 +187,8 @@ class Model:
         self.start_time_event_hook = None
         self.end_time_event_hook = None
         self._unsubs.clear()
+        if self in self.machine.models:
+            self.machine.remove_model(self)
 
     @callback
     def startup_delay_callback(self, _now: datetime) -> None:

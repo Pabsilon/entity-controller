@@ -3,7 +3,6 @@
 import pytest
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.setup import async_setup_component
 
 # Importing the integration here makes sure our `custom_components` package is the
 # one Python caches, instead of the plugin's testing_config package.
@@ -16,6 +15,7 @@ from .conftest import (
     advance,
     ec_state,
     get_entity,
+    setup_at_boot,
 )
 
 ENTITY_ID = f"{DOMAIN}.room"
@@ -37,8 +37,7 @@ async def test_pending_until_startup_delay(
 ) -> None:
     hass.states.async_set(SENSOR, "off")
     hass.states.async_set(LIGHT, "off")
-    assert await async_setup_component(hass, DOMAIN, {DOMAIN: {"room": CONFIG}})
-    await hass.async_block_till_done()
+    await setup_at_boot(hass, {"room": CONFIG})
     calls.register()
     assert ec_state(hass) == "pending"
 
@@ -200,7 +199,8 @@ async def test_removing_the_entity_stops_its_timers(
     hass.states.async_set(SENSOR, "off")
     hass.states.async_set(SENSOR, "on")
     await advance(hass, freezer, DELAY + 1)
-    assert hass.states.get(ENTITY_ID) is None
+    # A registered entity leaves an unavailable state behind
+    assert ec_state(hass) == "unavailable"
     assert calls.turned_off() == []
 
 

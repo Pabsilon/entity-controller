@@ -72,3 +72,12 @@ async def test_night_mode_inherits_delay(
         }
     )
     assert get_entity(hass).model.light_params_night[CONF_DELAY] == 42
+
+
+async def test_backoff_factor_keeps_decimals(
+    hass: HomeAssistant, setup_ec: SetupEC
+) -> None:
+    hass.states.async_set(SENSOR, "off")
+    hass.states.async_set(LIGHT, "off")
+    await setup_ec({**CONFIG, "backoff": True, "backoff_factor": 1.5})
+    assert get_entity(hass).model.backoff_factor == 1.5

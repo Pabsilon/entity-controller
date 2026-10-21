@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+<a name="10.2.0"></a>
+## [10.2.0](https://github.com/Pabsilon/entity-controller/compare/v10.1.0...v10.2.0) (2026-10-21)
+
+### Features
+
+* Entity Controllers can be created from the UI: **Settings → Devices & services → Helpers → Create helper → Entity Controller**. The form shows every option, in sections. Only a name and something to control (controlled entities, or entities to trigger) are needed, so an EC that only triggers scripts can be created too.
+* Every option can be changed from an EC's **Configure** dialog. Changes apply right away, without restarting Home Assistant.
+* ECs have a unique ID, so they can be renamed and given an area from the UI.
+* Entity Controllers in `configuration.yaml` are imported into the UI once, keeping their entity IDs. They can then be changed with **Configure**, and later changes to the YAML are ignored. See [Migrating from YAML](README.md#migrating-from-yaml).
+* Tools that fill in the create or **Configure** form through the API, such as MCP servers, work with it: every field has a unique key (`night_start_time`, `night_delay`, ...), and sections without values can be left out.
+
+### Deprecations
+
+* YAML configuration is deprecated. A Repairs issue asks you to remove the `entity_controller:` section once it has been imported. If a YAML key has the same name as an Entity Controller created in the UI, it is not imported and a Repairs issue explains how to fix it.
+
+### Behaviour Changes
+
+* ECs created or reloaded while Home Assistant is running start right away. The 70-second startup delay only applies while Home Assistant is starting.
+* Imported ECs leave out unknown options and options set to their default, which had no effect.
+
+### Bug Fixes
+
+* A decimal `backoff_factor`, such as `1.5`, was rounded down to a whole number.
+
 <a name="10.1.0"></a>
 ## [10.1.0](https://github.com/Pabsilon/entity-controller/compare/v10.0.0...v10.1.0) (2026-10-19)
 

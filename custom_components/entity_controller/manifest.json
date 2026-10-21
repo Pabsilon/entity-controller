@@ -3,11 +3,12 @@
   "name": "Entity Controller",
   "after_dependencies": ["light", "script"],
   "codeowners": ["@Pabsilon"],
+  "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/Pabsilon/entity-controller/blob/master/README.md",
   "integration_type": "helper",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/Pabsilon/entity-controller/issues",
   "requirements": ["transitions==0.9.3"],
-  "version": "10.1.0"
+  "version": "10.2.0"
 }

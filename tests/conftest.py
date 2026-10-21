@@ -5,7 +5,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import CoreState, HomeAssistant, ServiceCall
 from homeassistant.helpers.entity_component import DATA_INSTANCES
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
@@ -29,6 +29,18 @@ async def advance(hass: HomeAssistant, freezer, seconds: float) -> None:
     freezer.tick(timedelta(seconds=seconds))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
+
+
+async def setup_at_boot(hass: HomeAssistant, ecs: dict[str, Any]) -> None:
+    """Set up ECs from YAML the way HA does at boot, before it is running.
+
+    The test instance is already running, and ECs set up while HA is running skip
+    the startup delay.
+    """
+    hass.set_state(CoreState.not_running)
+    assert await async_setup_component(hass, DOMAIN, {DOMAIN: ecs})
+    await hass.async_block_till_done()
+    hass.set_state(CoreState.running)
 
 
 def ec_state(hass: HomeAssistant, entity_id: str = f"{DOMAIN}.room") -> str:
@@ -102,8 +114,7 @@ def setup_ec(hass: HomeAssistant, freezer, calls: ServiceCalls) -> SetupEC:
     async def _setup(config: dict[str, Any] | None = None, **ecs: dict) -> None:
         if config is not None:
             ecs = {"room": config, **ecs}
-        assert await async_setup_component(hass, DOMAIN, {DOMAIN: ecs})
-        await hass.async_block_till_done()
+        await setup_at_boot(hass, ecs)
         # Registered after setup so nothing set up alongside EC replaces them.
         calls.register()
         await advance(hass, freezer, STARTUP_DELAY + 1)
