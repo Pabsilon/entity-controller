@@ -117,6 +117,23 @@ async def test_user_flow_all_options_at_once(hass: HomeAssistant) -> None:
     }
 
 
+async def test_user_flow_only_sections_with_values(hass: HomeAssistant) -> None:
+    """An API client can create an EC by sending only the sections it fills in."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            "name": "Living Room",
+            "entity_settings": {"sensors": [SENSOR], "entities": [LIGHT]},
+            "timing": {"delay": 5},
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["options"] == OPTIONS
+
+
 async def test_user_flow_trigger_scripts_only(hass: HomeAssistant) -> None:
     """Controlling only scripts, with no controlled entities, is allowed."""
 
@@ -327,6 +344,22 @@ async def test_options_merge_legacy_keys(hass: HomeAssistant) -> None:
         "sensor_type": "duration",
         "delay": 5,
     }
+
+
+async def test_options_only_sections_with_values(hass: HomeAssistant) -> None:
+    """API clients such as MCP servers leave out the sections that have no values."""
+    entry = _entry()
+    await _add_entry(hass, entry)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    values = {k: v for k, v in _suggested(result["data_schema"]).items() if v}
+    assert set(values) == {"entity_settings", "timing", "behaviours"}
+    values["timing"]["delay"] = 15
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], values
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert dict(entry.options) == {**OPTIONS, "delay": 15}
 
 
 async def test_options_apply_without_restart(hass: HomeAssistant, freezer) -> None:

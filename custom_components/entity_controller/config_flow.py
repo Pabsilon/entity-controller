@@ -193,7 +193,9 @@ EXPANDED_SECTIONS = ("entity_settings", "timing")
 
 OPTIONS_SCHEMA = vol.Schema(
     {
-        vol.Required(name): section(
+        # Optional: HA's UI sends every section, but API clients such as MCP
+        # servers only send the ones that have values.
+        vol.Optional(name): section(
             vol.Schema(
                 {
                     vol.Optional(f"{sec.prefix}{key}"): field
