@@ -10,5 +10,5 @@
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/Pabsilon/entity-controller/issues",
   "requirements": ["transitions==0.9.3"],
-  "version": "10.2.0b3"
+  "version": "10.2.0b4"
 }

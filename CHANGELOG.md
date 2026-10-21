@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+<a name="10.2.0b4"></a>
+## [10.2.0b4](https://github.com/Pabsilon/entity-controller/compare/v10.2.0b3...v10.2.0b4) (2026-10-21)
+
+Pre-release for testing. Install it from HACS with **Show beta versions** enabled.
+
+### Features
+
+* Entity Controllers in `configuration.yaml` are imported into the UI once, keeping their entity IDs. They can then be changed with **Configure**, and later changes to the YAML are ignored.
+* YAML configuration is deprecated: a Repairs issue asks you to remove the `entity_controller:` section once it has been imported. If a YAML key has the same name as an Entity Controller created in the UI, it is not imported and a Repairs issue explains how to fix it.
+
 <a name="10.2.0b3"></a>
 ## [10.2.0b3](https://github.com/Pabsilon/entity-controller/compare/v10.2.0b2...v10.2.0b3) (2026-10-21)
 
