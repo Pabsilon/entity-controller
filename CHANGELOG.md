@@ -2,55 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
-<a name="10.2.0b4"></a>
-## [10.2.0b4](https://github.com/Pabsilon/entity-controller/compare/v10.2.0b3...v10.2.0b4) (2026-10-21)
-
-Pre-release for testing. Install it from HACS with **Show beta versions** enabled.
+<a name="10.2.0"></a>
+## [10.2.0](https://github.com/Pabsilon/entity-controller/compare/v10.1.0...v10.2.0) (2026-10-21)
 
 ### Features
 
-* Entity Controllers in `configuration.yaml` are imported into the UI once, keeping their entity IDs. They can then be changed with **Configure**, and later changes to the YAML are ignored.
-* YAML configuration is deprecated: a Repairs issue asks you to remove the `entity_controller:` section once it has been imported. If a YAML key has the same name as an Entity Controller created in the UI, it is not imported and a Repairs issue explains how to fix it.
+* Entity Controllers can be created from the UI: **Settings → Devices & services → Helpers → Create helper → Entity Controller**. The form shows every option, in sections. Only a name and something to control (controlled entities, or entities to trigger) are needed, so an EC that only triggers scripts can be created too.
+* Every option can be changed from an EC's **Configure** dialog. Changes apply right away, without restarting Home Assistant.
+* ECs have a unique ID, so they can be renamed and given an area from the UI.
+* Entity Controllers in `configuration.yaml` are imported into the UI once, keeping their entity IDs. They can then be changed with **Configure**, and later changes to the YAML are ignored. See [Migrating from YAML](README.md#migrating-from-yaml).
+* Tools that fill in the create or **Configure** form through the API, such as MCP servers, work with it: every field has a unique key (`night_start_time`, `night_delay`, ...), and sections without values can be left out.
 
-<a name="10.2.0b3"></a>
-## [10.2.0b3](https://github.com/Pabsilon/entity-controller/compare/v10.2.0b2...v10.2.0b3) (2026-10-21)
+### Deprecations
 
-Pre-release for testing. Install it from HACS with **Show beta versions** enabled.
-
-### Bug Fixes
-
-* Tools that fill in the create or **Configure** form through the API, such as MCP servers, can leave out the sections they don't use. Before, the form rejected them with "required key not provided".
-
-<a name="10.2.0b2"></a>
-## [10.2.0b2](https://github.com/Pabsilon/entity-controller/compare/v10.2.0b1...v10.2.0b2) (2026-10-21)
-
-Pre-release for testing. Install it from HACS with **Show beta versions** enabled.
-
-### Features
-
-* The create form shows every option, in the same sections as **Configure**, so an EC can be set up in one go. Only a name and something to control (controlled entities, or entities to trigger) are needed.
-* An EC that only triggers scripts, with no controlled entities, can now be created from the UI.
-
-### Behaviour Changes
-
-* The fields of the create and **Configure** forms have unique keys (`night_start_time`, `night_delay`, ...; sections `entity_settings` and `service_data_settings`), so tools that read or fill in the form through the API, such as MCP servers, can't mix up two fields with the same name. The labels in the UI and the saved options are unchanged: ECs created with 10.2.0b1 keep working without changes.
-
-<a name="10.2.0b1"></a>
-## [10.2.0b1](https://github.com/Pabsilon/entity-controller/compare/v10.1.0...v10.2.0b1) (2026-10-19)
-
-Pre-release for testing. Install it from HACS with **Show beta versions** enabled.
-
-### Features
-
-* Entity Controllers can be created from the UI: **Settings → Devices & services → Helpers → Create helper → Entity Controller**. The form asks for a name, sensors, controlled entities and a delay.
-* Every option of a UI-created EC can be changed from its **Configure** dialog, grouped in sections. Changes apply right away, without restarting Home Assistant.
-* UI-created ECs have a unique ID, so they can be renamed and given an area from the UI.
-
-YAML configuration keeps working unchanged. Importing it into the UI comes in a later release.
+* YAML configuration is deprecated. A Repairs issue asks you to remove the `entity_controller:` section once it has been imported. If a YAML key has the same name as an Entity Controller created in the UI, it is not imported and a Repairs issue explains how to fix it.
 
 ### Behaviour Changes
 
 * ECs created or reloaded while Home Assistant is running start right away. The 70-second startup delay only applies while Home Assistant is starting.
+* Imported ECs leave out unknown options and options set to their default, which had no effect.
 
 ### Bug Fixes
 
