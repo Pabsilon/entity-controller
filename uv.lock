@@ -942,7 +942,7 @@ wheels = [
 
 [[package]]
 name = "entity-controller"
-version = "10.2.0b2"
+version = "10.2.0b3"
 source = { virtual = "." }
 dependencies = [
     { name = "transitions" },

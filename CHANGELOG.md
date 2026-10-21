@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+<a name="10.2.0b3"></a>
+## [10.2.0b3](https://github.com/Pabsilon/entity-controller/compare/v10.2.0b2...v10.2.0b3) (2026-10-21)
+
+Pre-release for testing. Install it from HACS with **Show beta versions** enabled.
+
+### Bug Fixes
+
+* Tools that fill in the create or **Configure** form through the API, such as MCP servers, can leave out the sections they don't use. Before, the form rejected them with "required key not provided".
+
 <a name="10.2.0b2"></a>
 ## [10.2.0b2](https://github.com/Pabsilon/entity-controller/compare/v10.2.0b1...v10.2.0b2) (2026-10-21)
 
