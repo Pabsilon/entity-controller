@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+<a name="10.2.0b2"></a>
+## [10.2.0b2](https://github.com/Pabsilon/entity-controller/compare/v10.2.0b1...v10.2.0b2) (2026-10-21)
+
+Pre-release for testing. Install it from HACS with **Show beta versions** enabled.
+
+### Features
+
+* The create form shows every option, in the same sections as **Configure**, so an EC can be set up in one go. Only a name and something to control (controlled entities, or entities to trigger) are needed.
+* An EC that only triggers scripts, with no controlled entities, can now be created from the UI.
+
+### Behaviour Changes
+
+* The fields of the create and **Configure** forms have unique keys (`night_start_time`, `night_delay`, ...; sections `entity_settings` and `service_data_settings`), so tools that read or fill in the form through the API, such as MCP servers, can't mix up two fields with the same name. The labels in the UI and the saved options are unchanged: ECs created with 10.2.0b1 keep working without changes.
+
 <a name="10.2.0b1"></a>
 ## [10.2.0b1](https://github.com/Pabsilon/entity-controller/compare/v10.1.0...v10.2.0b1) (2026-10-19)
 
